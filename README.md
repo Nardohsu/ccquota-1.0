@@ -41,7 +41,8 @@ On Windows, remember that backslashes need escaping in JSON:
 By default the status line only re-runs on events in that session - a message sent, a
 session resumed. If you keep a window open to watch the numbers while working
 elsewhere, they will sit still. Add `refreshInterval` (seconds, minimum 1) to re-run on
-a timer as well:
+a timer as well - it adds a timer, it does not replace the event triggers, so a sent
+message still updates the line immediately:
 
 ```json
 {
@@ -53,8 +54,9 @@ a timer as well:
 }
 ```
 
-At roughly 100 ms per run, a 10 second interval costs about 1% of one core. Going below
-5 seconds buys nothing: quota does not move that fast.
+At roughly 100 ms per run, a 10 second interval costs about 1% of one core and 5 minutes
+costs nothing worth measuring. Pick by how long you are willing to look at a stale number
+while idle; anything under 5 seconds is wasted, since quota does not move that fast.
 
 Preview it without wiring anything up:
 
@@ -163,7 +165,7 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：
 
 預設狀態列只在**該 session 自己有動作時**才重跑（送出訊息、resume）。如果你開一個視窗
 擺著看數字、實際在別處工作，數字會一直不動。加上 `refreshInterval`（單位秒，最小 1）
-就會另外按計時器重跑：
+就會**另外**按計時器重跑 —— 它是疊加、不是取代，送出訊息一樣會立刻更新：
 
 ```json
 {
@@ -175,7 +177,8 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：
 }
 ```
 
-單次約 100 毫秒，設 10 秒大約吃掉 1% 的一個核心。低於 5 秒沒有意義，額度不會變那麼快。
+單次約 100 毫秒，設 10 秒大約吃掉 1% 的一個核心，設 5 分鐘則完全不值一提。依「閒置時
+你能忍受看到多舊的數字」來挑；低於 5 秒是浪費，額度不會變那麼快。
 
 **桌面版不執行狀態列指令。** 它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks
 都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測乾淨重開後指令從未被呼叫過。
