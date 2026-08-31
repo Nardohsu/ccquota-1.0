@@ -38,6 +38,24 @@ On Windows, remember that backslashes need escaping in JSON:
 }
 ```
 
+By default the status line only re-runs on events in that session - a message sent, a
+session resumed. If you keep a window open to watch the numbers while working
+elsewhere, they will sit still. Add `refreshInterval` (seconds, minimum 1) to re-run on
+a timer as well:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python /path/to/ccquota/ccquota.py",
+    "refreshInterval": 10
+  }
+}
+```
+
+At roughly 100 ms per run, a 10 second interval costs about 1% of one core. Going below
+5 seconds buys nothing: quota does not move that fast.
+
 Preview it without wiring anything up:
 
 ```bash
@@ -45,6 +63,10 @@ python ccquota.py --test
 ```
 
 The first run builds a cache and takes about a second. Every run after that is around 100 ms.
+
+**The desktop app does not run status line commands.** It reads `settings.json` - plugins
+and hooks from the same file take effect - but the `statusLine` key is ignored, verified
+by a command that was never invoked across a clean restart. Use the CLI for this.
 
 ## Segments
 
@@ -138,6 +160,26 @@ ctx 216k  5h 358k 4h22m  wk 53% 6d12h  today 2.9M  ●4
 Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：`python ccquota.py --test`。
 
 第一次跑會建快取、約 1 秒；之後每次約 100 毫秒。
+
+預設狀態列只在**該 session 自己有動作時**才重跑（送出訊息、resume）。如果你開一個視窗
+擺著看數字、實際在別處工作，數字會一直不動。加上 `refreshInterval`（單位秒，最小 1）
+就會另外按計時器重跑：
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python C:\path\to\ccquota\ccquota.py",
+    "refreshInterval": 10
+  }
+}
+```
+
+單次約 100 毫秒，設 10 秒大約吃掉 1% 的一個核心。低於 5 秒沒有意義，額度不會變那麼快。
+
+**桌面版不執行狀態列指令。** 它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks
+都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測乾淨重開後指令從未被呼叫過。
+這個工具請在 CLI 使用。
 
 ## 數字是怎麼算出來的
 
