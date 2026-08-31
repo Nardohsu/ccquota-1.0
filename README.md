@@ -40,7 +40,7 @@ Preview it without wiring anything up:
 python ccquota.py --test
 ```
 
-**The desktop app does not run status line commands.** It reads `settings.json` - plugins and hooks from the same file take effect - but the `statusLine` key is ignored, verified by a command that was never invoked across a clean restart with trust accepted and hooks enabled. Use the CLI.
+**The desktop app did not run status line commands** when this was tested, on the 2.1.247 build it ships with. It reads `settings.json` - plugins and hooks from the same file take effect - but the `statusLine` key was ignored, verified by a command that was never invoked across a clean restart with trust accepted and hooks enabled, while the same setup worked immediately in the CLI. The desktop app bundles its own Claude Code build separate from the one on your PATH, so check your own version before assuming this still holds. Use the CLI if the line does not appear.
 
 ## Segments
 
@@ -139,7 +139,7 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定：`pytho
 
 `refreshInterval`（單位秒，最小 1）讓狀態列另外按計時器重跑。它是**疊加**、不是取代事件觸發 —— 送出訊息一樣立刻更新，計時器只負責閒置的空檔。不設的話，你開著視窗卻在別處工作時數字會凍住。單次約 60~100 毫秒，設 300 秒完全不值一提，設 10 秒約吃掉 1% 的一個核心；低於 5 秒是浪費，額度不會變那麼快。
 
-**桌面版不執行狀態列指令。** 它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫。請在 CLI 使用。
+**桌面版在測試當下不執行狀態列指令**（它內建的是 2.1.247 版）。它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫，而同一份設定在 CLI 立刻就生效。桌面版自帶一份跟你 PATH 上不同的 Claude Code，所以先確認自己的版本再假設這個結論仍然成立。那行沒出現就改用 CLI。
 
 ## 數字是怎麼算出來的
 
