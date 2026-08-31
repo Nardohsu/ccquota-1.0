@@ -61,18 +61,23 @@ def config_dir():
 def claude_json_path():
     """Global config file, which holds the cached quota figures.
 
-    When CLAUDE_CONFIG_DIR is set the file lives inside it, and the default
-    location must not be used as a fallback: it would report usage from a
-    different profile than the transcripts being counted.
+    More than one file can be called .claude.json: Claude Code keeps a small
+    bootstrap file inside the config directory and the real 70 KB config in
+    $HOME, and which is which has changed between versions. Pick by content
+    rather than by position, or the decoy wins and the quota data disappears.
+
+    When CLAUDE_CONFIG_DIR is set, $HOME is not consulted at all: it would
+    report quota for a different profile than the transcripts being counted.
     """
     candidates = [os.path.join(config_dir(), ".claude.json"),
                   os.path.join(config_dir(), "config.json")]
     if not os.environ.get("CLAUDE_CONFIG_DIR"):
         candidates.append(os.path.expanduser("~/.claude.json"))
-    for p in candidates:
-        if os.path.exists(p):
+    existing = [p for p in candidates if os.path.exists(p)]
+    for p in existing:
+        if "cachedUsageUtilization" in read_json(p):
             return p
-    return candidates[-1]
+    return existing[0] if existing else candidates[-1]
 
 
 def cache_path():

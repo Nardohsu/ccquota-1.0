@@ -239,6 +239,23 @@ class TestOfficialAnchor(TempConfig):
     def test_missing_config_is_survivable(self):
         self.assertEqual(q.official_limits(time.time()), {})
 
+    def test_decoy_config_does_not_win(self):
+        """A second .claude.json without quota data must not shadow the real one."""
+        now = time.time()
+        decoy = {"firstStartTime": 1, "machineID": "abc"}
+        with open(os.path.join(self.dir, ".claude.json"), "w", encoding="utf-8") as fh:
+            json.dump(decoy, fh)
+        real = {"cachedUsageUtilization": {
+            "fetchedAtMs": int(now * 1000),
+            "utilization": {"limits": [
+                {"kind": "weekly_all", "group": "weekly",
+                 "percent": 42, "resets_at": iso(now + 3600)}]}}}
+        with open(os.path.join(self.dir, "config.json"), "w", encoding="utf-8") as fh:
+            json.dump(real, fh)
+
+        self.assertTrue(q.claude_json_path().endswith("config.json"))
+        self.assertEqual(q.official_limits(now)["weekly_all"]["percent"], 42)
+
 
 class TestWindowSum(unittest.TestCase):
     def test_boundaries_are_half_open(self):

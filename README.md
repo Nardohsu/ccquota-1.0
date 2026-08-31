@@ -80,7 +80,9 @@ Green below 70%, yellow from 70%, red from 90%.
 
 Everything comes from files Claude Code already writes on your machine. Getting them right took some care, and the details are worth knowing before you trust a number.
 
-**The official percentage is real, but it goes stale.** Claude Code caches the `/usage` response under `cachedUsageUtilization` in its global config, including `percent` and `resets_at` for each limit. That is the same data the `/usage` screen shows. It only refreshes when Claude Code itself fetches it, though, so it can sit untouched for days. A percentage only describes the window it was measured in, so ccquota shows it **only while that window is still open** and falls back to a local estimate — marked with `~` — once `resets_at` has passed.
+**The official percentage is real, but it goes stale.** Claude Code caches the `/usage` response under `cachedUsageUtilization` in its global config, including `percent` and `resets_at` for each limit. That is the same data the `/usage` screen shows. It refreshes rarely, though, and **opening the `/usage` panel does not refresh it** - that panel fetches live and renders without persisting, verified against a cache that stayed eight days stale while the panel showed current figures. Expect the fallback to be the normal case. A percentage only describes the window it was measured in, so ccquota shows it **only while that window is still open** and otherwise falls back to a local estimate, marked with `~`.
+
+**The config file is chosen by content.** More than one file can be called `.claude.json`: Claude Code keeps a small bootstrap file in the config directory and the real one in `$HOME`, and which is which has changed between versions. Picking the first that exists lets the decoy win and the quota data vanish, so ccquota picks the one that actually carries the figures.
 
 **Weekly reset times survive going stale; the 5-hour one does not.** The weekly window runs on a fixed 7-day cadence, so an expired `resets_at` can be rolled forward to the current window and stays correct. The 5-hour window cannot: it opens when you send your first message after the previous one lapsed, not on a clock grid — the reset times Claude Code reports carry minutes and sub-seconds. So the live 5-hour window is derived from your transcripts by finding the first message after a gap of five hours or more.
 
@@ -94,7 +96,8 @@ Everything comes from files Claude Code already writes on your machine. Getting 
 
 ## Limitations
 
-- Anything shown with `~` is estimated from local transcripts, not reported by Anthropic. Open `/usage` to refresh the authoritative numbers.
+- Anything shown with `~` is estimated from local transcripts, not reported by Anthropic, and there is no reliable way to force a refresh of the authoritative figures. Treat `~` as the normal mode and `/usage` as the source of truth.
+- The official percentage is weighted by model, so local token counts do not convert to it at a fixed rate. One measurement on a pure-Opus 5-hour window put 56% at 933k tokens; a Haiku-heavy window would land somewhere else.
 - Token counts cover transcripts on this machine only. Cloud sessions and other devices are not included.
 - `ctx` reports raw tokens because the real context limit varies by model and by `--autocompact`, and is not recorded on disk. Set `CCQUOTA_CTX_LIMIT` to your own window to get a percentage.
 - If a status line is configured but hooks are disabled, Claude Code skips it entirely. That is the host's behaviour, not a bug here.
@@ -140,7 +143,9 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：
 
 全部來自 Claude Code 本來就寫在你機器上的檔案。幾個關鍵取捨值得先知道：
 
-**官方百分比是真的，但會過期。** Claude Code 把 `/usage` 的回應快取在全域設定的 `cachedUsageUtilization`，含每個限制的 `percent` 與 `resets_at`，跟 `/usage` 畫面同一份資料。但它只在 Claude Code 自己去抓時才更新，可能好幾天不動。百分比只描述它被量測的那個窗，所以 ccquota **只在該窗還沒結束時**顯示官方數字，`resets_at` 一過就改用本機估算，並標上 `~`。
+**官方百分比是真的，但會過期。** Claude Code 把 `/usage` 的回應快取在全域設定的 `cachedUsageUtilization`，含每個限制的 `percent` 與 `resets_at`，跟 `/usage` 畫面同一份資料。但它很少更新，而且**開 `/usage` 面板並不會刷新它** —— 那個面板是即時打 API 後直接畫、不落地，實測面板顯示當下數字時快取仍停在 8 天前。所以請把估算值當成常態。百分比只描述它被量測的那個窗，所以 ccquota **只在該窗還沒結束時**顯示官方數字，否則改用本機估算並標上 `~`。
+
+**設定檔依內容挑選。** 叫做 `.claude.json` 的檔案不只一個：Claude Code 在設定目錄放一個小的開機檔，真正的那份在 `$HOME`，而且版本之間換過位置。挑「第一個存在的」會讓假檔勝出、額度資料整個消失，所以 ccquota 挑真的帶著數字的那一個。
 
 **週重置時間過期還能用，5 小時窗不行。** 週窗是固定 7 天週期，過期的 `resets_at` 可以往前推到當前窗、仍然正確。5 小時窗不行：它從你「前一個窗結束後的第一則訊息」開始算，不對齊時鐘格 —— Claude Code 回報的重置時間帶著分鐘和小數秒。所以 5 小時窗改從 transcript 推導，找出間隔 5 小時以上之後的第一則訊息。
 
@@ -154,7 +159,8 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：
 
 ## 限制
 
-- 標著 `~` 的都是本機估算，不是 Anthropic 回報的數字。想要權威數值就開一次 `/usage` 讓快取刷新。
+- 標著 `~` 的都是本機估算，不是 Anthropic 回報的數字，而且沒有可靠方法強制刷新官方數值。把 `~` 當常態，要權威數字就看 `/usage`。
+- 官方百分比會依模型加權，所以本機 token 數無法用固定比例換算成百分比。實測一個純 Opus 的 5 小時窗，56% 對應 933k token；Haiku 為主的窗會落在別的位置。
 - 只統計這台機器上的 transcript，雲端 session 與其他裝置不算在內。
 - `ctx` 顯示的是原始 token 數，因為真實 context 上限隨模型與 `--autocompact` 而變，本機沒有任何檔案記錄它。想看百分比就把你的實際上限設進 `CCQUOTA_CTX_LIMIT`。
 - 設了狀態列但關掉 hooks 的話，Claude Code 會整個跳過狀態列。那是宿主行為，不是這支程式的問題。
