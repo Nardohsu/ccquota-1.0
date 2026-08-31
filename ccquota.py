@@ -24,7 +24,10 @@ FIVE_HOUR = 5 * 3600
 WEEK = 7 * 86400
 DEFAULT_SEGMENTS = "ctx,5h,wk,today,agents"
 
-CTX_LIMIT = int(os.environ.get("CCQUOTA_CTX_LIMIT", "200000"))
+# The real context limit varies by model and by --autocompact, and is not
+# recorded anywhere on disk. Rather than divide by a guess, `ctx` reports raw
+# tokens and only becomes a percentage once you supply the denominator.
+CTX_LIMIT = int(os.environ.get("CCQUOTA_CTX_LIMIT") or 0)
 SESSION_MAX_AGE = int(os.environ.get("CCQUOTA_SESSION_MAX_AGE", "86400"))
 SEP = os.environ.get("CCQUOTA_SEP", "  ")
 
@@ -420,8 +423,12 @@ def build(data):
         elif seg == "ctx":
             ctx = context_tokens(data.get("transcript_path") or "")
             if ctx:
-                frac = ctx / float(CTX_LIMIT)
-                parts.append("ctx " + paint(level(frac), "{:.0f}%".format(frac * 100)))
+                if CTX_LIMIT > 0:
+                    frac = ctx / float(CTX_LIMIT)
+                    body = paint(level(frac), "{:.0f}%".format(frac * 100))
+                else:
+                    body = human(ctx)
+                parts.append("ctx " + body)
 
         elif seg == "5h":
             o = official.get("session")

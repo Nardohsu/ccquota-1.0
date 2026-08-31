@@ -3,6 +3,7 @@
 
 Run with:  python -m unittest test_ccquota -v
 """
+import importlib
 import json
 import os
 import shutil
@@ -264,6 +265,36 @@ class TestFormatting(unittest.TestCase):
         self.assertEqual(q.level(0.10), q.GRN)
         self.assertEqual(q.level(0.75), q.YEL)
         self.assertEqual(q.level(0.95), q.RED)
+
+
+class TestContextSegment(TempConfig):
+    def transcript(self, ctx_tokens):
+        p = os.path.join(self.dir, "t.jsonl")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(line("msg_1", "req_1", time.time() - 30,
+                          inp=ctx_tokens, out=10, cache_read=0, cache_create=0))
+        return p
+
+    def render(self, ctx_tokens, limit=None):
+        os.environ["CCQUOTA_SEGMENTS"] = "ctx"
+        if limit is None:
+            os.environ.pop("CCQUOTA_CTX_LIMIT", None)
+        else:
+            os.environ["CCQUOTA_CTX_LIMIT"] = str(limit)
+        try:
+            importlib.reload(q)                  # module reads the env at import
+            return q.build({"transcript_path": self.transcript(ctx_tokens)})
+        finally:
+            os.environ.pop("CCQUOTA_SEGMENTS", None)
+            os.environ.pop("CCQUOTA_CTX_LIMIT", None)
+            importlib.reload(q)
+
+    def test_reports_raw_tokens_without_a_limit(self):
+        """No denominator exists on disk, so do not invent one."""
+        self.assertIn("120k", self.render(120000))
+
+    def test_reports_a_percentage_once_a_limit_is_given(self):
+        self.assertIn("60%", self.render(120000, limit=200000))
 
 
 class TestRender(TempConfig):

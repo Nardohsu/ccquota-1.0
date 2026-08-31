@@ -3,7 +3,7 @@
 A usage status line for [Claude Code](https://claude.com/claude-code). One Python file, no dependencies, no network calls.
 
 ```
-ctx 96%  5h 358k 4h22m  wk 53% 6d12h  today 2.9M  ●4
+ctx 216k  5h 358k 4h22m  wk 53% 6d12h  today 2.9M  ●4
 ```
 
 At a glance: how full this session's context is, how much you have burned in the current 5-hour window and when it resets, where the weekly quota stands, today's total, and how many Claude Code sessions are actually running.
@@ -52,7 +52,7 @@ Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
 
 | Segment | Shows | Source |
 |---|---|---|
-| `ctx` | This session's context as a percentage of the limit | The last response in this session's transcript |
+| `ctx` | This session's context size, as a percentage if you set a limit | The last response in this session's transcript |
 | `5h` | Tokens used in the live 5-hour window, and time to reset | Official cache when current, otherwise derived from transcripts |
 | `wk` | Weekly quota percentage and time to reset | Official cache when current, otherwise a `~` estimate |
 | `today` | Tokens since local midnight | Transcripts |
@@ -66,7 +66,7 @@ Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
 | Variable | Default | Meaning |
 |---|---|---|
 | `CCQUOTA_SEGMENTS` | `ctx,5h,wk,today,agents` | Which segments to show, in order |
-| `CCQUOTA_CTX_LIMIT` | `200000` | Token limit the `ctx` percentage is measured against |
+| `CCQUOTA_CTX_LIMIT` | unset | Set it to turn `ctx` from a token count into a percentage |
 | `CCQUOTA_SEP` | two spaces | Separator between segments |
 | `CCQUOTA_SESSION_MAX_AGE` | `86400` | Ignore session files older than this many seconds |
 | `CCQUOTA_COLOR` | — | Set to `0` to disable colour |
@@ -96,7 +96,7 @@ Everything comes from files Claude Code already writes on your machine. Getting 
 
 - Anything shown with `~` is estimated from local transcripts, not reported by Anthropic. Open `/usage` to refresh the authoritative numbers.
 - Token counts cover transcripts on this machine only. Cloud sessions and other devices are not included.
-- The `ctx` limit is a plain constant. If you run with a non-default context window, set `CCQUOTA_CTX_LIMIT`.
+- `ctx` reports raw tokens because the real context limit varies by model and by `--autocompact`, and is not recorded on disk. Set `CCQUOTA_CTX_LIMIT` to your own window to get a percentage.
 - If a status line is configured but hooks are disabled, Claude Code skips it entirely. That is the host's behaviour, not a bug here.
 
 ## Privacy
@@ -114,7 +114,7 @@ MIT
 Claude Code 的用量狀態列。單一 Python 檔、零相依套件、不連網。
 
 ```
-ctx 96%  5h 358k 4h22m  wk 53% 6d12h  today 2.9M  ●4
+ctx 216k  5h 358k 4h22m  wk 53% 6d12h  today 2.9M  ●4
 ```
 
 一眼看完：這個 session 的 context 用了多少、目前 5 小時窗燒了多少又何時重置、週額度到哪、今日總量，以及有幾個 Claude Code 真的在跑。
@@ -156,7 +156,7 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定的話：
 
 - 標著 `~` 的都是本機估算，不是 Anthropic 回報的數字。想要權威數值就開一次 `/usage` 讓快取刷新。
 - 只統計這台機器上的 transcript，雲端 session 與其他裝置不算在內。
-- `ctx` 的分母是固定常數，用非預設 context 大小的話請設 `CCQUOTA_CTX_LIMIT`。
+- `ctx` 顯示的是原始 token 數，因為真實 context 上限隨模型與 `--autocompact` 而變，本機沒有任何檔案記錄它。想看百分比就把你的實際上限設進 `CCQUOTA_CTX_LIMIT`。
 - 設了狀態列但關掉 hooks 的話，Claude Code 會整個跳過狀態列。那是宿主行為，不是這支程式的問題。
 
 ## 隱私
