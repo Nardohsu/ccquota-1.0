@@ -387,6 +387,22 @@ def context_tokens(transcript_path):
 # --- formatting -------------------------------------------------------------
 
 
+def payload_limit(data, key):
+    """A rate limit as reported by the host on this invocation.
+
+    Claude Code passes `rate_limits` on stdin with a live `used_percentage`
+    and `resets_at`. This is the authority: it is current at the moment the
+    line is drawn, unlike the on-disk cache, which only refreshes at startup.
+    Everything below it in the fallback chain exists for hosts too old to send
+    it.
+    """
+    lim = ((data.get("rate_limits") or {}).get(key)) or {}
+    pct = lim.get("used_percentage")
+    if pct is None:
+        return None
+    return {"percent": pct, "resets_at": lim.get("resets_at")}
+
+
 def human(n):
     if n >= 1000000:
         return "{:.1f}M".format(n / 1000000.0)
@@ -409,10 +425,23 @@ def dur(seconds):
 
 def build(data):
     now = time.time()
-    entries = collect(now)
-    official = official_limits(now)
     segs = os.environ.get("CCQUOTA_SEGMENTS", DEFAULT_SEGMENTS).split(",")
     parts = []
+
+    # Both of these are expensive - a transcript sweep and a 70 KB JSON parse -
+    # and neither is needed when the host sends live figures, so pay for them
+    # only if a segment actually falls through to them.
+    memo = {}
+
+    def entries():
+        if "entries" not in memo:
+            memo["entries"] = collect(now)
+        return memo["entries"]
+
+    def official():
+        if "official" not in memo:
+            memo["official"] = official_limits(now)
+        return memo["official"]
 
     for seg in [s.strip() for s in segs if s.strip()]:
         if seg == "dir":
@@ -426,50 +455,79 @@ def build(data):
                 parts.append(paint(DIM, name))
 
         elif seg == "ctx":
-            ctx = context_tokens(data.get("transcript_path") or "")
-            if ctx:
-                if CTX_LIMIT > 0:
-                    frac = ctx / float(CTX_LIMIT)
-                    body = paint(level(frac), "{:.0f}%".format(frac * 100))
-                else:
-                    body = human(ctx)
-                parts.append("ctx " + body)
+            window = data.get("context_window") or {}
+            pct = window.get("used_percentage")
+            if pct is not None:
+                # The host knows the real window size, which varies by model
+                # and by --autocompact and is recorded nowhere on disk.
+                parts.append("ctx " + paint(level(pct / 100.0), "{:.0f}%".format(pct)))
+            else:
+                ctx = context_tokens(data.get("transcript_path") or "")
+                if ctx:
+                    if CTX_LIMIT > 0:
+                        frac = ctx / float(CTX_LIMIT)
+                        body = paint(level(frac), "{:.0f}%".format(frac * 100))
+                    else:
+                        body = human(ctx)
+                    parts.append("ctx " + body)
 
         elif seg == "5h":
-            o = official.get("session")
-            if o and o["fresh"]:
-                win = (o["resets_at"] - FIVE_HOUR, o["resets_at"])
+            live = payload_limit(data, "five_hour")
+            o = official().get("session")
+            if live:
+                body = "{}%".format(live["percent"])
+                frac = live["percent"] / 100.0
+                left = live["resets_at"] - now if live["resets_at"] else None
+            elif o and o["fresh"] and o["percent"] is not None:
+                body = "{}%".format(o["percent"])
+                frac = o["percent"] / 100.0
+                left = o["resets_at"] - now
             else:
-                win = current_block(entries, now)
-            if win:
-                body = human(window_sum(entries, win[0], win[1])[0])
+                win = current_block(entries(), now)
+                if not win:
+                    parts.append(paint(DIM, "5h idle"))
+                    continue
+                body = paint(DIM, "~") + human(window_sum(entries(), win[0], win[1])[0])
                 frac = (now - win[0]) / float(FIVE_HOUR)
-                if o and o["fresh"] and o["percent"] is not None:
-                    body = "{}%".format(o["percent"])
-                    frac = o["percent"] / 100.0
-                parts.append("5h " + paint(level(frac), body)
-                             + paint(DIM, " " + dur(win[1] - now)))
-            else:
-                parts.append(paint(DIM, "5h idle"))
+                left = win[1] - now
+            tail = paint(DIM, " " + dur(left)) if left is not None else ""
+            parts.append("5h " + paint(level(frac), body) + tail)
 
         elif seg == "wk":
-            o = official.get("weekly_all") or {}
-            win = roll_forward(o.get("resets_at"), WEEK, now)
-            if o.get("fresh") and o.get("percent") is not None:
-                frac = o["percent"] / 100.0
+            live = payload_limit(data, "seven_day")
+            o = official().get("weekly_all") or {}
+            if live:
+                body = "{}%".format(live["percent"])
+                frac = live["percent"] / 100.0
+                left = live["resets_at"] - now if live["resets_at"] else None
+            elif o.get("fresh") and o.get("percent") is not None:
                 body = "{}%".format(o["percent"])
+                frac = o["percent"] / 100.0
+                left = o["resets_at"] - now
             else:
+                win = roll_forward(o.get("resets_at"), WEEK, now)
                 start = win[0] if win else now - WEEK
                 frac = ((now - start) / float(WEEK)) if win else 0.0
-                body = paint(DIM, "~") + human(window_sum(entries, start, now)[0])
-            tail = paint(DIM, " " + dur(win[1] - now)) if win else ""
+                body = paint(DIM, "~") + human(window_sum(entries(), start, now)[0])
+                left = win[1] - now if win else None
+            tail = paint(DIM, " " + dur(left)) if left is not None else ""
             parts.append("wk " + paint(level(frac), body) + tail)
+
+        elif seg == "cache":
+            pc = data.get("prompt_cache") or {}
+            ratio = pc.get("hit_ratio")
+            if ratio is not None:
+                # A cold cache means the next turn re-reads the whole
+                # conversation, so warmth is worth seeing before a long task.
+                mark = "" if pc.get("warm") else paint(YEL, "*")
+                parts.append(paint(DIM, "cache ")
+                             + "{:.0f}%".format(ratio * 100) + mark)
 
         elif seg == "today":
             midnight = datetime.now().replace(hour=0, minute=0, second=0,
                                               microsecond=0).timestamp()
             parts.append(paint(DIM, "today ")
-                         + human(window_sum(entries, midnight, now)[0]))
+                         + human(window_sum(entries(), midnight, now)[0]))
 
         elif seg == "agents":
             n = len(live_sessions(now))

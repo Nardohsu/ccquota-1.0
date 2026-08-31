@@ -284,6 +284,82 @@ class TestFormatting(unittest.TestCase):
         self.assertEqual(q.level(0.95), q.RED)
 
 
+class TestPayload(TempConfig):
+    """The host sends live figures on stdin; they outrank everything on disk."""
+
+    def render(self, data, segments):
+        os.environ["CCQUOTA_SEGMENTS"] = segments
+        try:
+            return q.build(data)
+        finally:
+            os.environ.pop("CCQUOTA_SEGMENTS", None)
+
+    def payload(self, five=87, seven=12, now=None):
+        now = now or time.time()
+        return {"rate_limits": {
+            "five_hour": {"used_percentage": five, "resets_at": int(now + 5400)},
+            "seven_day": {"used_percentage": seven, "resets_at": int(now + 550000)}}}
+
+    def test_extracts_a_limit(self):
+        lim = q.payload_limit(self.payload(), "five_hour")
+        self.assertEqual(lim["percent"], 87)
+
+    def test_absent_limits_return_none(self):
+        self.assertIsNone(q.payload_limit({}, "five_hour"))
+        self.assertIsNone(q.payload_limit({"rate_limits": {}}, "five_hour"))
+        self.assertIsNone(
+            q.payload_limit({"rate_limits": {"five_hour": {}}}, "five_hour"))
+
+    def test_live_figures_are_shown_without_the_estimate_marker(self):
+        out = self.render(self.payload(), "5h,wk")
+        self.assertIn("87%", out)
+        self.assertIn("12%", out)
+        self.assertNotIn("~", out)
+
+    def test_live_figures_beat_the_on_disk_cache(self):
+        """The cache only refreshes at startup; the payload is current."""
+        now = time.time()
+        stale = {"cachedUsageUtilization": {
+            "fetchedAtMs": int(now * 1000),
+            "utilization": {"limits": [
+                {"kind": "session", "group": "session",
+                 "percent": 3, "resets_at": iso(now + 3600)}]}}}
+        with open(os.path.join(self.dir, ".claude.json"), "w", encoding="utf-8") as fh:
+            json.dump(stale, fh)
+        out = self.render(self.payload(five=87), "5h")
+        self.assertIn("87%", out)
+        self.assertNotIn("3%", out)
+
+    def test_falls_back_to_the_estimate_without_a_payload(self):
+        out = self.render({}, "wk")
+        self.assertIn("~", out)
+
+    def test_context_uses_the_hosts_window_size(self):
+        out = self.render({"context_window": {"used_percentage": 5,
+                                              "context_window_size": 1000000}}, "ctx")
+        self.assertIn("5%", out)
+
+    def test_cache_segment_flags_a_cold_cache(self):
+        warm = self.render({"prompt_cache": {"hit_ratio": 0.68, "warm": True}}, "cache")
+        cold = self.render({"prompt_cache": {"hit_ratio": 0.68, "warm": False}}, "cache")
+        self.assertIn("68%", warm)
+        self.assertNotIn("*", warm)
+        self.assertIn("*", cold)
+
+    def test_transcripts_are_not_scanned_when_the_payload_suffices(self):
+        """Segments served entirely by the payload must not pay for a sweep."""
+        calls = []
+        original = q.collect
+        q.collect = lambda now: calls.append(now) or {}
+        try:
+            self.render(self.payload(), "5h,wk,ctx,cache")
+            self.assertEqual(calls, [])
+            self.render(self.payload(), "5h,today")
+            self.assertEqual(len(calls), 1)
+        finally:
+            q.collect = original
+
+
 class TestContextSegment(TempConfig):
     def transcript(self, ctx_tokens):
         p = os.path.join(self.dir, "t.jsonl")

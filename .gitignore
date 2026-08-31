@@ -3,3 +3,7 @@ __pycache__/
 *.tmp
 win_in.json
 .venv/
+payload.jsonl
+_dump_payload.py
+check.py
+watch.bat
