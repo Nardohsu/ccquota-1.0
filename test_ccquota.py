@@ -266,6 +266,81 @@ class TestWindowSum(unittest.TestCase):
         self.assertEqual((tok, cache_read, count), (200, 9, 1))
 
 
+class TestBreakdown(TempConfig):
+    """Tag columns feed the panel's per-model and per-skill splits."""
+
+    def tagged(self, msg_id, minute_offset, tokens, model="", skill="", agent=""):
+        now = time.time()
+        rec = {"type": "assistant", "timestamp": iso(now + minute_offset * 60),
+               "requestId": "req_" + msg_id,
+               "message": {"id": msg_id, "model": model,
+                           "usage": {"input_tokens": 0, "output_tokens": tokens,
+                                     "cache_creation_input_tokens": 0,
+                                     "cache_read_input_tokens": 0}}}
+        if skill:
+            rec["attributionSkill"] = skill
+        if agent:
+            rec["attributionAgent"] = agent
+        return json.dumps(rec) + "\n"
+
+    def test_groups_by_model(self):
+        now = time.time()
+        self.write("a.jsonl",
+                   self.tagged("m1", -10, 300, model="claude-opus-5")
+                   + self.tagged("m2", -8, 100, model="claude-opus-5")
+                   + self.tagged("m3", -5, 250, model="claude-sonnet-5"))
+        rows = q.window_breakdown(q.collect(now), now - 3600, now, 3)
+        self.assertEqual(rows, [("claude-opus-5", 400), ("claude-sonnet-5", 250)])
+
+    def test_groups_by_skill_and_agent(self):
+        now = time.time()
+        self.write("a.jsonl",
+                   self.tagged("m1", -10, 300, skill="pixel-art-pipeline")
+                   + self.tagged("m2", -8, 120, agent="fork"))
+        entries = q.collect(now)
+        self.assertEqual(q.window_breakdown(entries, now - 3600, now, 4),
+                         [("pixel-art-pipeline", 300)])
+        self.assertEqual(q.window_breakdown(entries, now - 3600, now, 5),
+                         [("fork", 120)])
+
+    def test_untagged_responses_are_omitted(self):
+        now = time.time()
+        self.write("a.jsonl", self.tagged("m1", -10, 300))
+        self.assertEqual(q.window_breakdown(q.collect(now), now - 3600, now, 3), [])
+
+    def test_respects_the_window(self):
+        now = time.time()
+        self.write("a.jsonl",
+                   self.tagged("m1", -600, 999, model="old")
+                   + self.tagged("m2", -5, 100, model="new"))
+        rows = q.window_breakdown(q.collect(now), now - 3600, now, 3)
+        self.assertEqual(rows, [("new", 100)])
+
+
+class TestSnapshot(TempConfig):
+    """The status line is the only process handed live figures, so it saves them."""
+
+    def payload(self):
+        return {"rate_limits": {"five_hour": {"used_percentage": 87,
+                                              "resets_at": int(time.time() + 900)}},
+                "context_window": {"used_percentage": 5},
+                "prompt_cache": {"hit_ratio": 0.5},
+                "transcript_path": "ignored"}
+
+    def test_writes_the_interesting_parts(self):
+        q.save_snapshot(self.payload())
+        snap = q.read_json(q.snapshot_path())
+        self.assertEqual(snap["rate_limits"]["five_hour"]["used_percentage"], 87)
+        self.assertIn("context_window", snap)
+        self.assertIn("prompt_cache", snap)
+        self.assertNotIn("transcript_path", snap)     # not worth persisting
+        self.assertLess(abs(snap["at"] - time.time()), 5)
+
+    def test_a_payload_without_limits_writes_nothing(self):
+        q.save_snapshot({"model": {"display_name": "Opus 5"}})
+        self.assertFalse(os.path.exists(q.snapshot_path()))
+
+
 class TestFormatting(unittest.TestCase):
     def test_human(self):
         self.assertEqual(q.human(999), "999")

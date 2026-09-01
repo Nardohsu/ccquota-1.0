@@ -42,6 +42,30 @@ python ccquota.py --test
 
 **The desktop app did not run status line commands** when this was tested, on the 2.1.247 build it ships with. It reads `settings.json` - plugins and hooks from the same file take effect - but the `statusLine` key was ignored, verified by a command that was never invoked across a clean restart with trust accepted and hooks enabled, while the same setup worked immediately in the CLI. The desktop app bundles its own Claude Code build separate from the one on your PATH, so check your own version before assuming this still holds. Use the CLI if the line does not appear.
 
+## Panel
+
+The status line is one dense line. `ccquota_panel.py` lays the same data out for
+reading, in a small always-on-top window: both limit bars with their reset times,
+this session's context and cache, today's tokens split by model, what has been
+using your limits over the last 24 hours, and which Claude Code processes are
+running.
+
+```bash
+python ccquota_panel.py
+```
+
+On Windows, `panel.bat` opens it without a console window. It refreshes itself
+every 30 seconds and has a manual refresh button.
+
+Only the status line is handed live figures by Claude Code, so the panel reads a
+snapshot the status line writes on each invocation. Keep a CLI session running
+with ccquota installed and the panel stays current; with no snapshot it falls
+back to the cached figures on disk and labels the source at the bottom, so a
+stale number is never presented as a live one.
+
+Requires tkinter, which ships with python.org builds and most distributions
+(`apt install python3-tk` on Debian and Ubuntu).
+
 ## Segments
 
 Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
@@ -140,6 +164,27 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定：`pytho
 `refreshInterval`（單位秒，最小 1）讓狀態列另外按計時器重跑。它是**疊加**、不是取代事件觸發 —— 送出訊息一樣立刻更新，計時器只負責閒置的空檔。不設的話，你開著視窗卻在別處工作時數字會凍住。單次約 60~100 毫秒，設 300 秒完全不值一提，設 10 秒約吃掉 1% 的一個核心；低於 5 秒是浪費，額度不會變那麼快。
 
 **桌面版在測試當下不執行狀態列指令**（它內建的是 2.1.247 版）。它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫，而同一份設定在 CLI 立刻就生效。桌面版自帶一份跟你 PATH 上不同的 Claude Code，所以先確認自己的版本再假設這個結論仍然成立。那行沒出現就改用 CLI。
+
+## 彈窗面板
+
+狀態列是壓縮成一行的資訊。`ccquota_panel.py` 把同一份資料攤開給人看，做成一個
+小的置頂視窗：兩條額度進度條與重置時間、本次 session 的 context 與快取命中、
+今日 token 依模型拆分、近 24 小時是什麼在用你的額度，以及有哪些 Claude Code
+進程在跑。
+
+```bash
+python ccquota_panel.py
+```
+
+Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。每 30 秒自動刷新，右上角也有
+手動更新鈕。
+
+只有狀態列會拿到 Claude Code 餵的即時數字，所以彈窗讀的是狀態列每次執行時留下
+的快照。保持一個裝了 ccquota 的 CLI session 開著，彈窗的數字就一直是新的；沒有
+快照時會退回磁碟上的快取數字，並在底部標明來源 —— 過期的數字不會被當成即時的呈現。
+
+需要 tkinter（python.org 的安裝版與多數發行版都內建；Debian/Ubuntu 用
+`apt install python3-tk`）。
 
 ## 數字是怎麼算出來的
 

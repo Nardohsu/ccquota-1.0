@@ -19,7 +19,7 @@ __version__ = "0.1.0"
 # --- tunables (all overridable by environment variables) --------------------
 
 RETENTION_DAYS = 8          # how much history the cache keeps
-CACHE_VERSION = 4           # bump to invalidate the on-disk cache
+CACHE_VERSION = 5           # bump to invalidate the on-disk cache
 FIVE_HOUR = 5 * 3600
 WEEK = 7 * 86400
 DEFAULT_SEGMENTS = "ctx,5h,wk,today,agents"
@@ -212,8 +212,14 @@ def parse_from(path, start, entries):
             if not usage or epoch is None:
                 continue
             key = str(msg.get("id")) + "|" + str(d.get("requestId"))
+            # Model and attribution ride along so the panel can break usage
+            # down without a second sweep. Claude Code tags each response with
+            # the skill, agent or plugin that caused it.
             val = [int(epoch // 60), bill(usage),
-                   usage.get("cache_read_input_tokens", 0)]
+                   usage.get("cache_read_input_tokens", 0),
+                   msg.get("model") or "",
+                   d.get("attributionSkill") or "",
+                   d.get("attributionAgent") or d.get("attributionPlugin") or ""]
             prev = entries.get(key)
             if prev is None or val[1] > prev[1]:
                 entries[key] = val
@@ -268,12 +274,29 @@ def collect(now):
 def window_sum(entries, start, end):
     a, b = int(start // 60), int(end // 60)
     tok = cr = n = 0
-    for minute, billable, cache_read in entries.values():
-        if a <= minute < b:
-            tok += billable
-            cr += cache_read
+    for v in entries.values():
+        if a <= v[0] < b:
+            tok += v[1]
+            cr += v[2]
             n += 1
     return tok, cr, n
+
+
+def window_breakdown(entries, start, end, index):
+    """Sum billable tokens in a window, grouped by one of the tag columns.
+
+    index 3 is the model, 4 the skill, 5 the agent or plugin.
+    """
+    a, b = int(start // 60), int(end // 60)
+    out = {}
+    for v in entries.values():
+        if not (a <= v[0] < b) or len(v) <= index:
+            continue
+        label = v[index]
+        if not label:
+            continue
+        out[label] = out.get(label, 0) + v[1]
+    return sorted(out.items(), key=lambda kv: -kv[1])
 
 
 def current_block(entries, now):
@@ -385,6 +408,32 @@ def context_tokens(transcript_path):
 
 
 # --- formatting -------------------------------------------------------------
+
+
+def snapshot_path():
+    return os.path.join(os.path.dirname(cache_path()), "live.json")
+
+
+def save_snapshot(data):
+    """Keep the host's live figures where a separate process can read them.
+
+    Only the status line is handed a payload; anything else - the panel, a
+    script - has no way to ask for one. Writing the interesting parts down on
+    each invocation gives them a view that is as fresh as the last refresh.
+    """
+    if not data.get("rate_limits"):
+        return
+    snap = {"at": int(time.time())}
+    for key in ("rate_limits", "context_window", "prompt_cache", "model", "version"):
+        if key in data:
+            snap[key] = data[key]
+    try:
+        tmp = snapshot_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(snap, fh, separators=(",", ":"))
+        os.replace(tmp, snapshot_path())
+    except OSError:
+        pass
 
 
 def payload_limit(data, key):
@@ -551,6 +600,7 @@ def main():
                 data = json.loads(raw)
         except (ValueError, OSError):
             data = {}
+    save_snapshot(data)
     try:
         print(build(data))
     except Exception as exc:                # never break the host status line
