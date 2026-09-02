@@ -60,30 +60,50 @@ def ago(seconds):
     return "{} 小時前".format(seconds // 3600)
 
 
-def resolve_limit(snap, official, key, kind, now):
+def resolve_limit(snap, official, key, kind, now, entries=None):
     """Pick the freshest usable figure for one limit.
 
     A percentage only describes the window it was measured in. Once resets_at
     has passed, that window is gone and the number is not merely old, it is
     about something else - showing it would be worse than showing nothing. So
-    each limit is judged on its own: the snapshot first, then the disk cache,
-    then nothing.
+    each limit is judged on its own, in order of authority:
+
+      1. the snapshot the status line leaves behind - live and official
+      2. the figures cached on disk, while their window is still open
+      3. tokens counted from the transcripts - no percentage, but it moves
+
+    Step 3 matters because only the status line is ever handed a percentage.
+    With no session running one, the first two go quiet within hours and the
+    panel would have nothing to show at all; a token count is not the official
+    figure, but it is current and it answers a refresh.
     """
     lim = ((snap.get("rate_limits") or {}).get(key)) or {}
     resets = lim.get("resets_at")
     if lim.get("used_percentage") is not None and resets and resets > now:
-        return {"pct": lim["used_percentage"], "resets": resets,
+        return {"pct": lim["used_percentage"], "tokens": None, "resets": resets,
                 "source": "狀態列快照", "age": now - snap.get("at", 0)}
 
     o = official.get(kind) or {}
     if o.get("fresh") and o.get("percent") is not None:
-        return {"pct": o["percent"], "resets": o["resets_at"],
+        return {"pct": o["percent"], "tokens": None, "resets": o["resets_at"],
                 "source": "磁碟快取", "age": now - (o.get("fetched") or now)}
 
-    # Nothing current. Keep the reset time if it can still be projected, since
-    # a countdown stays correct even when the percentage does not.
     win = q.roll_forward(o.get("resets_at"), o.get("period"), now)
-    return {"pct": None, "resets": win[1] if win else None,
+    if kind == "session":
+        # The 5h window is anchored to your first message rather than a clock
+        # grid, so it comes from activity, not from projecting a reset time.
+        win = q.current_block(entries, now) if entries else None
+    elif win is None and entries:
+        # No weekly anchor has ever been written, so there is no cadence to
+        # follow. A rolling seven days is not the quota window, but it is the
+        # same fallback the status line uses and it is labelled an estimate.
+        win = (now - q.WEEK, None)
+
+    if entries is not None and win:
+        return {"pct": None, "tokens": q.window_sum(entries, win[0], now)[0],
+                "resets": win[1], "source": "本機估算", "age": 0}
+
+    return {"pct": None, "tokens": None, "resets": win[1] if win else None,
             "source": None, "age": None}
 
 
@@ -94,8 +114,10 @@ def gather():
     official = q.official_limits(now)
     out = {"now": now}
 
-    out["five"] = resolve_limit(snap, official, "five_hour", "session", now)
-    out["seven"] = resolve_limit(snap, official, "seven_day", "weekly_all", now)
+    entries = q.collect(now)
+    out["five"] = resolve_limit(snap, official, "five_hour", "session", now, entries)
+    out["seven"] = resolve_limit(snap, official, "seven_day", "weekly_all", now,
+                                 entries)
 
     # Session-level figures describe whichever session last wrote the snapshot.
     # Once it is old that session is probably gone, so they stop being shown
@@ -112,7 +134,6 @@ def gather():
         out["ctx"] = out["ctx_size"] = out["cache"] = out["model"] = None
     out["source"] = out["five"]["source"] or out["seven"]["source"]
 
-    entries = q.collect(now)
     midnight = datetime.now().replace(hour=0, minute=0, second=0,
                                       microsecond=0).timestamp()
     tok, cread, count = q.window_sum(entries, midnight, now)
@@ -188,12 +209,19 @@ class Panel(tk.Tk):
             when = "{} 重置 · {}".format(
                 datetime.fromtimestamp(resets).strftime(reset_fmt),
                 q.dur(left) if left > 0 else "已重置")
-        if data.get("age") is not None:
+        if data.get("source") == "本機估算":
+            when += "   ·   本機估算 token，非官方百分比"
+        elif data.get("age") is not None:
             when += "   ·   {} {}".format(data["source"], ago(data["age"]))
-        elif pct is None:
+        else:
             when += "   ·   沒有可用的數字"
-        self.row(parent, title, "{}%".format(pct) if pct is not None else "—",
-                 lc=FG, rc=tone(pct), lf=11, rf=13, bold=True)
+        if pct is not None:
+            value, colour = "{}%".format(pct), tone(pct)
+        elif data.get("tokens") is not None:
+            value, colour = "~{:,}".format(data["tokens"]), MUTE
+        else:
+            value, colour = "—", DIM
+        self.row(parent, title, value, lc=FG, rc=colour, lf=11, rf=13, bold=True)
         self.row(parent, when, "", lc=DIM, lf=8)
         self.bar(parent, pct, tone(pct))
 

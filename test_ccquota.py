@@ -382,14 +382,43 @@ class TestPanelFreshness(unittest.TestCase):
         self.assertEqual(r["pct"], 21)
         self.assertEqual(r["source"], "磁碟快取")
 
-    def test_countdown_survives_when_no_percentage_does(self):
-        """A reset time can still be projected once the figure is unusable."""
+    def weekly(self, percent, resets_at):
+        return {"weekly_all": {"percent": percent, "resets_at": resets_at,
+                               "period": q.WEEK, "fetched": self.now,
+                               "fresh": resets_at > self.now}}
+
+    def test_weekly_countdown_survives_when_no_percentage_does(self):
+        """The weekly reset runs on a fixed cadence, so it can be projected."""
+        r = self.p.resolve_limit(
+            {}, self.weekly(53, self.now - 3 * q.WEEK), "seven_day",
+            "weekly_all", self.now)
+        self.assertIsNone(r["pct"])
+        self.assertIsNotNone(r["resets"])
+        self.assertGreater(r["resets"], self.now)
+
+    def test_the_five_hour_reset_is_not_projected(self):
+        """It opens on your first message, so there is no cadence to follow."""
         r = self.p.resolve_limit(
             {}, self.official(3, self.now - 2 * q.FIVE_HOUR, q.FIVE_HOUR),
             "five_hour", "session", self.now)
         self.assertIsNone(r["pct"])
-        self.assertIsNotNone(r["resets"])
-        self.assertGreater(r["resets"], self.now)
+        self.assertIsNone(r["resets"])
+
+    def test_falls_through_to_a_token_estimate(self):
+        """With no percentage anywhere, a live token count still beats a dash."""
+        entries = {"k": [int((self.now - 600) // 60), 4200, 0]}
+        r = self.p.resolve_limit({}, {}, "five_hour", "session", self.now,
+                                 entries)
+        self.assertIsNone(r["pct"])
+        self.assertEqual(r["tokens"], 4200)
+        self.assertEqual(r["source"], "本機估算")
+
+    def test_an_estimate_never_outranks_a_reported_figure(self):
+        entries = {"k": [int((self.now - 600) // 60), 4200, 0]}
+        r = self.p.resolve_limit(self.snap(43, self.now + 9000), {},
+                                 "five_hour", "session", self.now, entries)
+        self.assertEqual(r["pct"], 43)
+        self.assertIsNone(r["tokens"])
 
     def test_empty_inputs_are_survivable(self):
         r = self.p.resolve_limit({}, {}, "five_hour", "session", self.now)
