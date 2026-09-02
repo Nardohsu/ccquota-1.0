@@ -101,7 +101,7 @@ Green below 70%, yellow from 70%, red from 90%.
 
 **The host payload is the authority.** Claude Code pipes a JSON object into the status line command on every run. It carries `rate_limits.five_hour` and `rate_limits.seven_day` with a live `used_percentage` and `resets_at`, a `context_window` with the real `context_window_size` and `used_percentage`, plus `prompt_cache`, `cost`, `model` and `workspace`. Anything available there is used directly — no estimation, no staleness. Everything below exists for hosts too old to send it.
 
-**First fallback: the cached figures on disk.** Claude Code stores the `/usage` response under `cachedUsageUtilization` in its global config. It refreshes at startup — **opening the `/usage` panel does not refresh it**, verified against a cache that stayed eight days stale while the panel showed current figures — so a long-running session drifts. A percentage only describes the window it was measured in, so it is used only while that window is still open.
+**First fallback: the cached figures on disk.** Claude Code stores the `/usage` response under `cachedUsageUtilization` in its global config. It refreshes rarely and on no schedule this project could pin down: one observed gap was eight days, another ran past forty hours of daily use across several app restarts and CLI sessions without moving. **Opening the `/usage` panel does not refresh it** - verified against a cache that stayed eight days stale while the panel showed current figures. A percentage only describes the window it was measured in, so it is used only while that window is still open. That makes it far more useful for the weekly limit, whose window is seven days long, than for the 5-hour one, where any cached figure is dead within five hours; treat it as a floor, since usage has grown since it was taken.
 
 **Second fallback: the transcripts.** Token counts derived locally, marked with `~` so an estimate never passes for a reported figure. The weekly reset rolls forward on its fixed 7-day cadence; the 5-hour window cannot, because it opens on your first message rather than on a clock grid — the reset times carry minutes and sub-seconds — so it is found by looking for the first message after a gap of five hours or more. Checked against a live panel, this derivation put the reset within two minutes of the official one.
 
@@ -190,7 +190,7 @@ Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。每 30 秒自�
 
 **stdin payload 是權威來源。** Claude Code 每次執行狀態列都會用管線餵進一包 JSON，裡面有 `rate_limits.five_hour` 和 `rate_limits.seven_day`（含即時的 `used_percentage` 與 `resets_at`）、`context_window`（含真實的 `context_window_size`）、還有 `prompt_cache`、`cost`、`model`、`workspace`。凡是那裡有的就直接用 —— 不估算、不會過期。以下所有機制都只是給太舊、不送這包資料的版本用的。
 
-**第一層退路：磁碟上的快取數字。** Claude Code 把 `/usage` 的回應存在全域設定的 `cachedUsageUtilization`。它在**啟動時**刷新 —— **開 `/usage` 面板並不會刷新它**，實測面板顯示當下數字時快取仍停在 8 天前 —— 所以長時間執行的 session 會漂掉。百分比只描述它被量測的那個窗，因此只在該窗還沒結束時採用。
+**第一層退路：磁碟上的快取數字。** Claude Code 把 `/usage` 的回應存在全域設定的 `cachedUsageUtilization`。它很少刷新，而且本專案找不出固定規律：觀察到的一次間隔是 8 天，另一次則是超過 40 小時的日常使用、期間重開過數次桌面版也跑過 CLI，仍然沒有更新。**開 `/usage` 面板並不會刷新它** —— 實測面板顯示當下數字時快取仍停在 8 天前。百分比只描述它被量測的那個窗，因此只在該窗還沒結束時採用。這讓它對**週限制**遠比對 5 小時窗有用（週窗長達 7 天，5 小時窗的任何快取數字 5 小時內必定作廢）；並且要當成**下限**看，因為量測之後用量只會增加。
 
 **第二層退路：transcript。** 從本機推算 token，標上 `~`，讓估算值絕不會被誤認成官方數字。週重置可以按固定 7 天週期往前推；5 小時窗不行，因為它從你的第一則訊息開始算、不對齊時鐘格（重置時間帶著分鐘和小數秒），所以改成找「間隔 5 小時以上之後的第一則訊息」。跟即時面板對照過，這個推導算出的重置時間跟官方只差 2 分鐘。
 
