@@ -210,9 +210,10 @@ class Panel(tk.Tk):
         head.pack(fill="x", padx=26, pady=(0, 10))
         tk.Label(head, text="用量", bg=BG, fg=FG,
                  font=(F, 13, "bold")).pack(side="left")
-        tk.Button(head, text="更新", command=self.build, bg=CARD, fg=MUTE,
-                  activebackground=LINE, activeforeground=FG, relief="flat",
-                  font=(F, 8), padx=10, cursor="hand2").pack(side="right")
+        tk.Button(head, text="更新", command=self.request_rebuild, bg=CARD,
+                  fg=MUTE, activebackground=LINE, activeforeground=FG,
+                  relief="flat", font=(F, 8), padx=10,
+                  cursor="hand2").pack(side="right")
 
         limits = self.card(self.body)
         self.limit_block(limits, "5 小時限制", d["five"], "%H:%M")
@@ -237,14 +238,17 @@ class Panel(tk.Tk):
 
         today = self.card(self.body)
         self.heading(today, "今日 · 本機所有專案")
-        self.row(today, "Token", q.human(d["today_tokens"]), lc=MUTE, rc=FG, rf=11)
+        # Exact figures, not human(): 2,283,546 and 2,287,430 both render as
+        # "2.3M", which makes a working refresh look like a dead button.
+        self.row(today, "Token", "{:,}".format(d["today_tokens"]),
+                 lc=MUTE, rc=FG, rf=11)
         self.row(today, "請求數", "{:,}".format(d["today_requests"]), lc=MUTE, rc=FG)
-        self.row(today, "快取讀取", q.human(d["today_cache_read"]), lc=DIM, rc=DIM,
-                 lf=8, rf=8)
+        self.row(today, "快取讀取", "{:,}".format(d["today_cache_read"]),
+                 lc=DIM, rc=DIM, lf=8, rf=8)
         total = float(d["today_tokens"]) or 1.0
         for name, value in d["by_model"]:
             self.row(today, "   " + name.replace("claude-", ""),
-                     "{}  {:.0f}%".format(q.human(value), value / total * 100),
+                     "{:,}  {:.0f}%".format(value, value / total * 100),
                      lc=MUTE, rc=BLUE, lf=9, rf=9)
 
         if d["attribution"]:
@@ -273,6 +277,22 @@ class Panel(tk.Tk):
         tk.Label(self.body, text=foot, bg=BG,
                  fg=YEL if (age is None or age > SNAPSHOT_MAX_AGE) else DIM,
                  font=(F, 8)).pack(anchor="w", padx=26, pady=(2, 0))
+        # Refreshing often changes nothing on screen - the snapshot only moves
+        # when a session writes one - so stamp the read itself, or the button
+        # looks broken when it worked.
+        tk.Label(self.body,
+                 text="面板讀取於 {}".format(datetime.now().strftime("%H:%M:%S")),
+                 bg=BG, fg=DIM, font=(F, 8)).pack(anchor="w", padx=26)
+
+    def request_rebuild(self):
+        """Rebuild after the current event finishes.
+
+        build() destroys the frame the refresh button lives in. Tk tolerates
+        that here, but destroying the widget whose callback is still on the
+        stack is fragile enough not to rely on, so the click is allowed to
+        finish first.
+        """
+        self.after_idle(self.build)
 
     def tick(self):
         try:
