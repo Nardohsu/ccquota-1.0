@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ccquota as q
 
 REFRESH_MS = 30000
+SNAPSHOT_MAX_AGE = 900     # 超過就不再顯示 session 層級的數字
 WIDTH = 430
 
 BG = "#16181d"
@@ -59,33 +60,57 @@ def ago(seconds):
     return "{} 小時前".format(seconds // 3600)
 
 
+def resolve_limit(snap, official, key, kind, now):
+    """Pick the freshest usable figure for one limit.
+
+    A percentage only describes the window it was measured in. Once resets_at
+    has passed, that window is gone and the number is not merely old, it is
+    about something else - showing it would be worse than showing nothing. So
+    each limit is judged on its own: the snapshot first, then the disk cache,
+    then nothing.
+    """
+    lim = ((snap.get("rate_limits") or {}).get(key)) or {}
+    resets = lim.get("resets_at")
+    if lim.get("used_percentage") is not None and resets and resets > now:
+        return {"pct": lim["used_percentage"], "resets": resets,
+                "source": "狀態列快照", "age": now - snap.get("at", 0)}
+
+    o = official.get(kind) or {}
+    if o.get("fresh") and o.get("percent") is not None:
+        return {"pct": o["percent"], "resets": o["resets_at"],
+                "source": "磁碟快取", "age": now - (o.get("fetched") or now)}
+
+    # Nothing current. Keep the reset time if it can still be projected, since
+    # a countdown stays correct even when the percentage does not.
+    win = q.roll_forward(o.get("resets_at"), o.get("period"), now)
+    return {"pct": None, "resets": win[1] if win else None,
+            "source": None, "age": None}
+
+
 def gather():
     """Everything the panel shows, with the source of each figure recorded."""
     now = time.time()
     snap = q.read_json(q.snapshot_path())
     official = q.official_limits(now)
-    out = {"now": now, "snapshot_age": None, "source": "磁碟快取"}
+    out = {"now": now}
 
-    if snap.get("rate_limits"):
-        out["snapshot_age"] = now - snap.get("at", 0)
-        out["source"] = "狀態列快照"
-        for name, key in (("five", "five_hour"), ("seven", "seven_day")):
-            lim = snap["rate_limits"].get(key) or {}
-            out[name] = {"pct": lim.get("used_percentage"),
-                         "resets": lim.get("resets_at")}
+    out["five"] = resolve_limit(snap, official, "five_hour", "session", now)
+    out["seven"] = resolve_limit(snap, official, "seven_day", "weekly_all", now)
+
+    # Session-level figures describe whichever session last wrote the snapshot.
+    # Once it is old that session is probably gone, so they stop being shown
+    # rather than being attributed to the session you are looking at now.
+    age = now - snap.get("at", 0) if snap.get("at") else None
+    out["snapshot_age"] = age
+    if age is not None and age <= SNAPSHOT_MAX_AGE:
         cw = snap.get("context_window") or {}
         out["ctx"] = cw.get("used_percentage")
         out["ctx_size"] = cw.get("context_window_size")
-        pc = snap.get("prompt_cache") or {}
-        out["cache"] = pc.get("hit_ratio")
+        out["cache"] = (snap.get("prompt_cache") or {}).get("hit_ratio")
         out["model"] = (snap.get("model") or {}).get("display_name")
     else:
-        for name, kind in (("five", "session"), ("seven", "weekly_all")):
-            o = official.get(kind) or {}
-            fresh = o.get("fresh")
-            out[name] = {"pct": o.get("percent") if fresh else None,
-                         "resets": o.get("resets_at")}
         out["ctx"] = out["ctx_size"] = out["cache"] = out["model"] = None
+    out["source"] = out["five"]["source"] or out["seven"]["source"]
 
     entries = q.collect(now)
     midnight = datetime.now().replace(hour=0, minute=0, second=0,
@@ -163,7 +188,11 @@ class Panel(tk.Tk):
             when = "{} 重置 · {}".format(
                 datetime.fromtimestamp(resets).strftime(reset_fmt),
                 q.dur(left) if left > 0 else "已重置")
-        self.row(parent, title, "{}%".format(pct) if pct is not None else "無資料",
+        if data.get("age") is not None:
+            when += "   ·   {} {}".format(data["source"], ago(data["age"]))
+        elif pct is None:
+            when += "   ·   沒有可用的數字"
+        self.row(parent, title, "{}%".format(pct) if pct is not None else "—",
                  lc=FG, rc=tone(pct), lf=11, rf=13, bold=True)
         self.row(parent, when, "", lc=DIM, lf=8)
         self.bar(parent, pct, tone(pct))
@@ -234,19 +263,29 @@ class Panel(tk.Tk):
             self.row(sess, "  {}".format((s.get("name") or "?")[:24]),
                      started.strftime("%H:%M"), lc=MUTE, rc=DIM, lf=9, rf=9)
 
-        foot = "來源：{}".format(d["source"])
-        if d["snapshot_age"] is not None:
-            foot += " · {}".format(ago(d["snapshot_age"]))
+        age = d["snapshot_age"]
+        if age is None:
+            foot = "沒有狀態列快照 · 開一個裝了 ccquota 的 CLI session 可取得即時數字"
+        elif age > SNAPSHOT_MAX_AGE:
+            foot = "快照已過期 {} · session 數字已隱藏".format(ago(age))
         else:
-            foot += " · 開一個裝了 ccquota 的 CLI session 可取得即時數字"
-        tk.Label(self.body, text=foot, bg=BG, fg=DIM,
+            foot = "狀態列快照 · {}".format(ago(age))
+        tk.Label(self.body, text=foot, bg=BG,
+                 fg=YEL if (age is None or age > SNAPSHOT_MAX_AGE) else DIM,
                  font=(F, 8)).pack(anchor="w", padx=26, pady=(2, 0))
 
     def tick(self):
         try:
             self.build()
-        except Exception:
-            pass
+        except Exception as exc:
+            # A silently frozen panel still looks live, which is the one thing
+            # it must never do. Say so instead.
+            for w in self.body.winfo_children():
+                w.destroy()
+            tk.Label(self.body, text="更新失敗：{}".format(type(exc).__name__),
+                     bg=BG, fg=RED, font=(F, 10)).pack(padx=26, pady=20)
+            tk.Button(self.body, text="重試", command=self.build, bg=CARD,
+                      fg=FG, relief="flat", font=(F, 9)).pack()
         self.after(REFRESH_MS, self.tick)
 
 

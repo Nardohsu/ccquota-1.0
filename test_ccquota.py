@@ -341,6 +341,62 @@ class TestSnapshot(TempConfig):
         self.assertFalse(os.path.exists(q.snapshot_path()))
 
 
+class TestPanelFreshness(unittest.TestCase):
+    """A percentage from a window that has already reset must never be shown.
+
+    It is not merely stale, it describes a different window, so displaying it
+    is worse than displaying nothing.
+    """
+
+    def setUp(self):
+        import ccquota_panel
+        self.p = ccquota_panel
+        self.now = time.time()
+
+    def snap(self, five_pct, five_resets, age=60):
+        return {"at": self.now - age,
+                "rate_limits": {"five_hour": {"used_percentage": five_pct,
+                                              "resets_at": five_resets}}}
+
+    def official(self, percent, resets_at, period):
+        return {"session": {"percent": percent, "resets_at": resets_at,
+                            "period": period, "fetched": self.now,
+                            "fresh": resets_at > self.now}}
+
+    def test_open_window_is_used(self):
+        r = self.p.resolve_limit(self.snap(43, self.now + 9000), {},
+                                 "five_hour", "session", self.now)
+        self.assertEqual(r["pct"], 43)
+        self.assertEqual(r["source"], "狀態列快照")
+
+    def test_reset_window_is_refused(self):
+        r = self.p.resolve_limit(self.snap(87, self.now - 3600), {},
+                                 "five_hour", "session", self.now)
+        self.assertIsNone(r["pct"])
+
+    def test_falls_through_to_disk_when_the_snapshot_has_lapsed(self):
+        r = self.p.resolve_limit(
+            self.snap(87, self.now - 3600),
+            self.official(21, self.now + 1800, q.FIVE_HOUR),
+            "five_hour", "session", self.now)
+        self.assertEqual(r["pct"], 21)
+        self.assertEqual(r["source"], "磁碟快取")
+
+    def test_countdown_survives_when_no_percentage_does(self):
+        """A reset time can still be projected once the figure is unusable."""
+        r = self.p.resolve_limit(
+            {}, self.official(3, self.now - 2 * q.FIVE_HOUR, q.FIVE_HOUR),
+            "five_hour", "session", self.now)
+        self.assertIsNone(r["pct"])
+        self.assertIsNotNone(r["resets"])
+        self.assertGreater(r["resets"], self.now)
+
+    def test_empty_inputs_are_survivable(self):
+        r = self.p.resolve_limit({}, {}, "five_hour", "session", self.now)
+        self.assertIsNone(r["pct"])
+        self.assertIsNone(r["source"])
+
+
 class TestFormatting(unittest.TestCase):
     def test_human(self):
         self.assertEqual(q.human(999), "999")
