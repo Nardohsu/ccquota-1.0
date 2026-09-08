@@ -44,11 +44,16 @@ python ccquota.py --test
 
 ## Panel
 
-The status line is one dense line. `ccquota_panel.py` lays the same data out for
-reading, in a small always-on-top window: both limit bars with their reset times,
-this session's context and cache, today's tokens split by model, what has been
-using your limits over the last 24 hours, and which Claude Code processes are
-running.
+`ccquota_panel.py` presents a compact, dark pixel-adventure guild dashboard.
+The three cards show remaining weekly quota, local tokens from the last seven
+days, and today's local tokens. The camp scene shows the active Claude Code
+session count. Click the expedition area or choose **選項 → 用量明細** to open
+the original statistics in a scrollable window: both limits, context and cache,
+model breakdown, attribution, and running sessions.
+
+The guild asset count is explicitly a rolling seven-day token count, not a
+lifetime total or currency balance. Unknown official quota is shown as a dash;
+local estimates are never converted into an official percentage.
 
 ```bash
 python ccquota_panel.py
@@ -56,6 +61,22 @@ python ccquota_panel.py
 
 On Windows, `panel.bat` opens it without a console window. It refreshes itself
 every 30 seconds and has a manual refresh button.
+Collection runs in the background so the window stays responsive. F5 refreshes,
+Ctrl+D opens details, and **選項 → 視窗保持置頂** toggles always-on-top.
+Scenes are chosen randomly from the `assets` directory at startup and at local
+system time **09:00 and 18:00** daily. **選項 → 隨機切換場景** switches manually.
+Each change fades the old scene out and the new scene in over two seconds;
+text and controls remain visible. The next image differs from the current one
+when another valid image is available. Supported formats: PNG, GIF (first
+frame), PPM and PGM. Add images directly to `assets`; the folder is rescanned
+on every switch. Unreadable images are skipped. With one valid image it stays
+in place; with no images the dashboard still works.
+
+Scheduling runs inside the panel, so keep it open for automatic changes.
+After sleep, the panel catches up once if a 09:00/18:00 boundary was missed;
+it does not replay every missed change. Midnight does not trigger a change.
+Scene transitions use `ccquota_scene.py`, Tkinter and the Python standard
+library, with no extra packages or network access.
 
 Only the status line is handed live figures by Claude Code, so the panel reads a
 snapshot the status line writes on each invocation. Keep a CLI session running
@@ -167,10 +188,16 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定：`pytho
 
 ## 彈窗面板
 
-狀態列是壓縮成一行的資訊。`ccquota_panel.py` 把同一份資料攤開給人看，做成一個
-小的置頂視窗：兩條額度進度條與重置時間、本次 session 的 context 與快取命中、
-今日 token 依模型拆分、近 24 小時是什麼在用你的額度，以及有哪些 Claude Code
-進程在跑。
+`ccquota_panel.py` 採用深藍像素冒險公會介面，主畫面包含：
+
+- **每週行動力**：官方週額度的剩餘百分比、重置時間與分段體力條。
+- **公會總資產**：本機近 7 日 token（不含快取讀取），不是歷史累計或貨幣。
+- **今日採集**：今日 token 與請求數。
+- **遠征隊伍**：像素村莊營火場景與執行中的 Claude Code session 數量。
+
+點擊隊伍區、按 Ctrl+D，或選擇「選項 → 用量明細」，可查看原本的全部統計：
+5 小時／每週限制、Context、快取、模型拆分、近 24 小時用量歸屬及工作階段。
+明細視窗支援捲動。沒有官方額度時顯示「—」，不把本機 token 估算換成百分比。
 
 ```bash
 python ccquota_panel.py
@@ -178,6 +205,22 @@ python ccquota_panel.py
 
 Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。每 30 秒自動刷新，右上角也有
 手動更新鈕。
+也可按 F5 更新，從「選項」切換保持置頂。資料在背景讀取，不會阻塞操作；
+失敗時顯示錯誤與重試按鈕。
+
+### 場景隨機切換
+
+- 啟動時從 `assets` 隨機選圖；每天依電腦本機時間 **09:00、18:00** 自動換圖。
+- 從「選項 → 隨機切換場景」可立即預覽切換效果。
+- 每次約 **2 秒**：舊圖漸暗淡出，新圖再漸亮淡入，文字與按鈕不受影響。
+- 有其他有效圖片時，不連續重複目前圖片。全部圖片共用同一個隨機候選池。
+- 將 PNG、GIF（第一幀）、PPM 或 PGM 直接放在 `assets`，下次切換就會重新掃描。
+  損壞的圖片會略過；只有一張時維持原圖，沒有圖片時仍可查看用量。
+- 自動換景需要面板保持開啟。休眠錯過時間點時，喚醒後補切一次，不連續重播；
+  午夜不換景。排程每秒檢查一次，因此通常會在整點後一秒內開始轉場。
+
+場景功能位於 `ccquota_scene.py`，使用 Tkinter 與 Python 標準函式庫，
+不新增執行期相依套件、不連網、不修改原始圖片。
 
 只有狀態列會拿到 Claude Code 餵的即時數字，所以彈窗讀的是狀態列每次執行時留下
 的快照。保持一個裝了 ccquota 的 CLI session 開著，彈窗的數字就一直是新的；沒有
