@@ -27,7 +27,7 @@ Requires Python 3.7+. The panel also needs tkinter, which ships with python.org 
 and most distributions (`apt install python3-tk` on Debian and Ubuntu).
 
 ```bash
-git clone https://github.com/YOUR_NAME/ccquota.git
+git clone https://github.com/Nardohsu/ccquota-1.0.git
 ```
 
 That is the whole installation — there is nothing to build and nothing to pip install.
@@ -215,7 +215,7 @@ ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
 Debian/Ubuntu 用 `apt install python3-tk`）。
 
 ```bash
-git clone https://github.com/YOUR_NAME/ccquota.git
+git clone https://github.com/Nardohsu/ccquota-1.0.git
 ```
 
 抓下來就是全部的安裝了 —— 不用編譯，也沒有要 pip install 的東西。
