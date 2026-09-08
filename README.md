@@ -1,24 +1,50 @@
 # ccquota
 
-A usage status line for [Claude Code](https://claude.com/claude-code). One Python file, no dependencies, no network calls.
+A local usage dashboard for [Claude Code](https://claude.com/claude-code). It shows how
+much of your 5-hour and weekly quota is left and when each resets, what today has cost,
+and how many Claude Code sessions are actually running — all read from files Claude Code
+already writes on your machine. No network calls, no pip packages.
+
+It comes in two forms over one shared data layer:
+
+**A panel** — a dark pixel-adventure guild dashboard. Weekly quota as a stamina bar, a
+camp scene showing your running sessions, and the full statistics one click behind it.
+
+**A status line** — the same figures compressed into the line under the Claude Code
+prompt:
 
 ```
 ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
 ```
 
-At a glance: how full this session's context is, where the 5-hour and weekly limits stand and when they reset, how many tokens today has cost, and how many Claude Code sessions are actually running.
-
-The quota figures are the real ones. Claude Code hands its status line a live `rate_limits` object on every invocation, so `5h` and `wk` are the same numbers `/usage` shows, not an estimate.
+The quota figures are the real ones. Claude Code hands its status line a live
+`rate_limits` object on every invocation, so `5h` and `wk` are the same numbers `/usage`
+shows, not an estimate.
 
 ## Install
 
-Requires Python 3.7+. Nothing else.
+Requires Python 3.7+. The panel also needs tkinter, which ships with python.org builds
+and most distributions (`apt install python3-tk` on Debian and Ubuntu).
 
 ```bash
 git clone https://github.com/YOUR_NAME/ccquota.git
 ```
 
-Then point Claude Code at it in `~/.claude/settings.json`:
+That is the whole installation — there is nothing to build and nothing to pip install.
+
+## Run
+
+### The panel
+
+```bash
+python ccquota_panel.py
+```
+
+On Windows, double-click `panel.bat` to open it without a console window.
+
+### The status line
+
+Point Claude Code at it in `~/.claude/settings.json`, then restart Claude Code:
 
 ```json
 {
@@ -30,62 +56,71 @@ Then point Claude Code at it in `~/.claude/settings.json`:
 }
 ```
 
-On Windows, backslashes need escaping in JSON: `"python C:\\Users\\you\\ccquota\\ccquota.py"`.
+On Windows, backslashes need escaping in JSON:
+`"python C:\\Users\\you\\ccquota\\ccquota.py"`.
 
-`refreshInterval` (seconds, minimum 1) re-runs the line on a timer. It **adds** a timer rather than replacing the event triggers, so a sent message still updates the line immediately; the timer only covers the idle stretches. Without it, a window left open while you work elsewhere shows a frozen number. At roughly 60-100 ms a run, 300 seconds costs nothing worth measuring and 10 seconds costs about 1% of one core. Anything under 5 seconds is wasted, since quota does not move that fast.
-
-Preview it without wiring anything up:
+To see the line without wiring anything up:
 
 ```bash
 python ccquota.py --test
 ```
 
-**The desktop app did not run status line commands** when this was tested, on the 2.1.247 build it ships with. It reads `settings.json` - plugins and hooks from the same file take effect - but the `statusLine` key was ignored, verified by a command that was never invoked across a clean restart with trust accepted and hooks enabled, while the same setup worked immediately in the CLI. The desktop app bundles its own Claude Code build separate from the one on your PATH, so check your own version before assuming this still holds. Use the CLI if the line does not appear.
+**The desktop app did not run status line commands** when this was tested, on the 2.1.247
+build it ships with. It reads `settings.json` - plugins and hooks from the same file take
+effect - but the `statusLine` key was ignored, verified by a command that was never
+invoked across a clean restart with trust accepted and hooks enabled, while the same
+setup worked immediately in the CLI. The desktop app bundles its own Claude Code build
+separate from the one on your PATH, so check your own version before assuming this still
+holds. Use the CLI if the line does not appear.
+
+`refreshInterval` (seconds, minimum 1) re-runs the line on a timer. It **adds** a timer
+rather than replacing the event triggers, so a sent message still updates the line
+immediately; the timer only covers the idle stretches. Without it, a window left open
+while you work elsewhere shows a frozen number. At roughly 60-100 ms a run, 300 seconds
+costs nothing worth measuring and 10 seconds costs about 1% of one core. Anything under
+5 seconds is wasted, since quota does not move that fast.
+
+### Checking it works
+
+```bash
+python -m unittest discover -p "test_*.py"
+```
 
 ## Panel
 
-`ccquota_panel.py` presents a compact, dark pixel-adventure guild dashboard.
-The three cards show remaining weekly quota, local tokens from the last seven
-days, and today's local tokens. The camp scene shows the active Claude Code
-session count. Click the expedition area or choose **選項 → 用量明細** to open
-the original statistics in a scrollable window: both limits, context and cache,
-model breakdown, attribution, and running sessions.
+The three cards show remaining weekly quota, local tokens from the last seven days, and
+today's local tokens. The camp scene shows the active Claude Code session count. Click
+the expedition area, press Ctrl+D, or choose **選項 → 用量明細** to open the full
+statistics in a scrollable window: both limits, context and cache, model breakdown,
+attribution, and running sessions.
 
-The guild asset count is explicitly a rolling seven-day token count, not a
-lifetime total or currency balance. Unknown official quota is shown as a dash;
-local estimates are never converted into an official percentage.
+The guild asset count is explicitly a rolling seven-day token count, not a lifetime total
+or a currency balance. Unknown official quota is shown as a dash; local estimates are
+never converted into an official percentage.
 
-```bash
-python ccquota_panel.py
-```
+The panel refreshes every 30 seconds and collects in the background so the window stays
+responsive. F5 refreshes, Ctrl+D opens details, and **選項 → 視窗保持置頂** toggles
+always-on-top.
 
-On Windows, `panel.bat` opens it without a console window. It refreshes itself
-every 30 seconds and has a manual refresh button.
-Collection runs in the background so the window stays responsive. F5 refreshes,
-Ctrl+D opens details, and **選項 → 視窗保持置頂** toggles always-on-top.
-Scenes are chosen randomly from the `assets` directory at startup and at local
-system time **09:00 and 18:00** daily. **選項 → 隨機切換場景** switches manually.
-Each change fades the old scene out and the new scene in over two seconds;
-text and controls remain visible. The next image differs from the current one
-when another valid image is available. Supported formats: PNG, GIF (first
-frame), PPM and PGM. Add images directly to `assets`; the folder is rescanned
-on every switch. Unreadable images are skipped. With one valid image it stays
-in place; with no images the dashboard still works.
+Scenes are chosen randomly from the `assets` directory at startup and at local system
+time **09:00 and 18:00** daily. **選項 → 隨機切換場景** switches manually. Each change
+fades the old scene out and the new one in over two seconds; text and controls remain
+visible. The next image differs from the current one when another valid image is
+available. Supported formats: PNG, GIF (first frame), PPM and PGM. Add images directly to
+`assets`; the folder is rescanned on every switch. Unreadable images are skipped. With
+one valid image it stays in place; with no images the dashboard still works.
 
-Scheduling runs inside the panel, so keep it open for automatic changes.
-After sleep, the panel catches up once if a 09:00/18:00 boundary was missed;
-it does not replay every missed change. Midnight does not trigger a change.
-Scene transitions use `ccquota_scene.py`, Tkinter and the Python standard
-library, with no extra packages or network access.
+Scheduling runs inside the panel, so keep it open for automatic changes. After sleep, the
+panel catches up once if a 09:00/18:00 boundary was missed; it does not replay every
+missed change. Midnight does not trigger a change. Scene transitions use
+`ccquota_scene.py`, Tkinter and the Python standard library, with no extra packages or
+network access.
 
-Only the status line is handed live figures by Claude Code, so the panel reads a
-snapshot the status line writes on each invocation. Keep a CLI session running
-with ccquota installed and the panel stays current; with no snapshot it falls
-back to the cached figures on disk and labels the source at the bottom, so a
-stale number is never presented as a live one.
-
-Requires tkinter, which ships with python.org builds and most distributions
-(`apt install python3-tk` on Debian and Ubuntu).
+Only the status line is handed live figures by Claude Code, so the panel reads a snapshot
+the status line writes on each invocation. Keep a CLI session running with ccquota
+installed and the panel stays current; with no snapshot it falls back to the cached
+figures on disk and labels the source at the bottom, so a stale number is never presented
+as a live one.
 
 ## Segments
 
@@ -156,19 +191,48 @@ MIT
 
 # 繁體中文
 
-Claude Code 的用量狀態列。單一 Python 檔、零相依套件、不連網。
+Claude Code 的本機用量儀表板。看 5 小時窗與週窗還剩多少、各自何時重置、今天燒了多少
+token，以及實際有幾個 Claude Code 在跑 —— 全部讀自 Claude Code 本來就寫在你機器上的
+檔案，不連網、不裝任何 pip 套件。
+
+同一套資料層，兩種呈現方式：
+
+**面板** —— 深藍像素冒險公會介面。週額度做成體力條、營火場景顯示執行中的 session
+數量，完整統計藏在一次點擊之後。
+
+**狀態列** —— 同樣的數字壓縮成 Claude Code 輸入框下方的一行：
 
 ```
 ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
 ```
 
-一眼看完：這個 session 的 context 用了多少、5 小時窗與週窗各到哪又何時重置、今日燒了多少 token，以及有幾個 Claude Code 真的在跑。
-
-額度數字是**真的官方數字**。Claude Code 每次呼叫狀態列時都會餵進一個即時的 `rate_limits`，所以 `5h` 和 `wk` 跟 `/usage` 看到的一樣，不是估算。
+額度數字是**真的官方數字**。Claude Code 每次呼叫狀態列時都會餵進一個即時的
+`rate_limits`，所以 `5h` 和 `wk` 跟 `/usage` 看到的一樣，不是估算。
 
 ## 安裝
 
-需要 Python 3.7 以上。把 repo 抓下來後，在 `~/.claude/settings.json` 指過去：
+需要 Python 3.7 以上。面板另外需要 tkinter（python.org 的安裝版與多數發行版都內建；
+Debian/Ubuntu 用 `apt install python3-tk`）。
+
+```bash
+git clone https://github.com/YOUR_NAME/ccquota.git
+```
+
+抓下來就是全部的安裝了 —— 不用編譯，也沒有要 pip install 的東西。
+
+## 執行
+
+### 面板
+
+```bash
+python ccquota_panel.py
+```
+
+Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。
+
+### 狀態列
+
+在 `~/.claude/settings.json` 指過去，然後重開 Claude Code：
 
 ```json
 {
@@ -180,15 +244,32 @@ ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
 }
 ```
 
-Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定：`python ccquota.py --test`。
+Windows 路徑的反斜線在 JSON 裡要跳脫。想先看看長相而不接設定：
 
-`refreshInterval`（單位秒，最小 1）讓狀態列另外按計時器重跑。它是**疊加**、不是取代事件觸發 —— 送出訊息一樣立刻更新，計時器只負責閒置的空檔。不設的話，你開著視窗卻在別處工作時數字會凍住。單次約 60~100 毫秒，設 300 秒完全不值一提，設 10 秒約吃掉 1% 的一個核心；低於 5 秒是浪費，額度不會變那麼快。
+```bash
+python ccquota.py --test
+```
 
-**桌面版在測試當下不執行狀態列指令**（它內建的是 2.1.247 版）。它會讀 `settings.json`（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 —— 實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫，而同一份設定在 CLI 立刻就生效。桌面版自帶一份跟你 PATH 上不同的 Claude Code，所以先確認自己的版本再假設這個結論仍然成立。那行沒出現就改用 CLI。
+**桌面版在測試當下不執行狀態列指令**（它內建的是 2.1.247 版）。它會讀 `settings.json`
+（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 ——
+實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫，而同一份設定在
+CLI 立刻就生效。桌面版自帶一份跟你 PATH 上不同的 Claude Code，所以先確認自己的版本再
+假設這個結論仍然成立。那行沒出現就改用 CLI。
 
-## 彈窗面板
+`refreshInterval`（單位秒，最小 1）讓狀態列另外按計時器重跑。它是**疊加**、不是取代事件
+觸發 —— 送出訊息一樣立刻更新，計時器只負責閒置的空檔。不設的話，你開著視窗卻在別處工作
+時數字會凍住。單次約 60~100 毫秒，設 300 秒完全不值一提，設 10 秒約吃掉 1% 的一個核心；
+低於 5 秒是浪費，額度不會變那麼快。
 
-`ccquota_panel.py` 採用深藍像素冒險公會介面，主畫面包含：
+### 確認能動
+
+```bash
+python -m unittest discover -p "test_*.py"
+```
+
+## 面板細節
+
+主畫面四個區塊：
 
 - **每週行動力**：官方週額度的剩餘百分比、重置時間與分段體力條。
 - **公會總資產**：本機近 7 日 token（不含快取讀取），不是歷史累計或貨幣。
@@ -199,14 +280,8 @@ Windows 路徑的反斜線在 JSON 裡要跳脫。先預覽不接設定：`pytho
 5 小時／每週限制、Context、快取、模型拆分、近 24 小時用量歸屬及工作階段。
 明細視窗支援捲動。沒有官方額度時顯示「—」，不把本機 token 估算換成百分比。
 
-```bash
-python ccquota_panel.py
-```
-
-Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。每 30 秒自動刷新，右上角也有
-手動更新鈕。
-也可按 F5 更新，從「選項」切換保持置頂。資料在背景讀取，不會阻塞操作；
-失敗時顯示錯誤與重試按鈕。
+每 30 秒自動刷新，右上角也有手動更新鈕，也可按 F5。資料在背景讀取，不會阻塞操作；
+失敗時顯示錯誤與重試按鈕。從「選項 → 視窗保持置頂」切換置頂。
 
 ### 場景隨機切換
 
@@ -225,9 +300,6 @@ Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。每 30 秒自�
 只有狀態列會拿到 Claude Code 餵的即時數字，所以彈窗讀的是狀態列每次執行時留下
 的快照。保持一個裝了 ccquota 的 CLI session 開著，彈窗的數字就一直是新的；沒有
 快照時會退回磁碟上的快取數字，並在底部標明來源 —— 過期的數字不會被當成即時的呈現。
-
-需要 tkinter（python.org 的安裝版與多數發行版都內建；Debian/Ubuntu 用
-`apt install python3-tk`）。
 
 ## 數字是怎麼算出來的
 
