@@ -591,7 +591,25 @@ def build(data):
     return SEP.join(parts)
 
 
+def local_figures():
+    """The figures only this machine's files can answer, as plain data.
+
+    The mod reads quota, context and cost from the engine itself; what it
+    cannot get there - today's tokens across every session, and how many
+    Claude Code processes are running - comes from here.
+    """
+    now = time.time()
+    midnight = datetime.now().replace(hour=0, minute=0, second=0,
+                                      microsecond=0).timestamp()
+    tok, cache_read, count = window_sum(collect(now), midnight, now)
+    return {"today_tokens": tok, "today_cache_read": cache_read,
+            "today_requests": count, "sessions": len(live_sessions(now))}
+
+
 def main():
+    if "--local" in sys.argv:
+        print(json.dumps(local_figures()))
+        return 0
     data = {}
     if "--test" not in sys.argv and not sys.stdin.isatty():
         try:
