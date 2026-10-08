@@ -1,0 +1,14 @@
+{
+  "name": "ccquota",
+  "description": "ccquota: Claude Code quota band (5h / weekly / context / cache / today / sessions)",
+  "owner": {
+    "name": "Nardohsu"
+  },
+  "plugins": [
+    {
+      "name": "ccquota",
+      "source": "./mod",
+      "description": "5-hour and weekly quota, context, cost, today's tokens and live sessions in a band above the prompt"
+    }
+  ]
+}

@@ -137,10 +137,34 @@ Quota, context and cost come from the engine itself (`$.session.usage()` and
 summed from this session's main-thread turns. Today's tokens and the live session
 count come from `python ccquota.py --local`. `/ccquota` hides or shows the band.
 
-Load it with `claude --plugin-dir /path/to/ccquota/mod`, or for the desktop app
-name that folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of
-`~/.claude/settings.json`. The path to `ccquota.py` and the Python command are
-settings of the mod (`/config`).
+### Install (from GitHub)
+
+In a terminal `claude` session (the command is not available in the desktop Code tab):
+
+```
+/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
+```
+
+Answer `y` to add the marketplace, then choose the **user** scope. Installed at the
+user scope it also loads in the sessions the desktop app starts. On the settings
+screen, point `script` at your own `ccquota.py` (the default is the author's path)
+and `python` at your Python 3 command. You can change both later in `/config`.
+
+### Run it from your clone
+
+If you already have this repository cloned and want edits to take effect without
+reinstalling, name the `mod` folder in the `env` block of `~/.claude/settings.json`:
+
+```json
+"env": {
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
+}
+```
+
+Every session started after that loads it, in the desktop app and the terminal alike
+(already-open conversations need a restart). For a single terminal session,
+`claude --plugin-dir /path/to/ccquota/mod` does the same. Use one way or the other,
+not both, or the band is drawn twice.
 
 ## Segments
 
@@ -334,9 +358,32 @@ python -m unittest discover -p "test_*.py"
 的官方數字。快取命中率由本 session 主對話每一輪的用量累加。今日 token 與執行中
 session 數來自 `python ccquota.py --local`。輸入 `/ccquota` 可隱藏或顯示橫條。
 
-載入方式：`claude --plugin-dir /path/to/ccquota/mod`；桌面版則在
-`~/.claude/settings.json` 的 `env` 區塊用 `CLAUDE_CODE_PLUGIN_DIRS` 指向該資料夾。
-`ccquota.py` 路徑與 Python 指令是 mod 的設定項（`/config`）。
+### 安裝（從 GitHub）
+
+在終端機的 `claude` 裡輸入（桌面版 Code 分頁沒有這個指令）：
+
+```
+/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
+```
+
+詢問是否加入 marketplace 時回答 `y`，範圍選 **user**。裝在 user 範圍，桌面版開的
+session 也會載入。設定畫面中把 `script` 改成你自己的 `ccquota.py` 路徑（預設值是作者
+的路徑），`python` 改成你的 Python 3 指令；之後也能在 `/config` 修改。
+
+### 從自己的 clone 執行
+
+已經 clone 這個 repo、希望改了檔案不必重裝就生效，就在 `~/.claude/settings.json`
+的 `env` 區塊指向 `mod` 資料夾：
+
+```json
+"env": {
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
+}
+```
+
+之後新開的每個 session 都會載入，桌面版與終端機皆同（已開的對話要重開）。只想在單一
+終端機 session 用，可改用 `claude --plugin-dir /path/to/ccquota/mod`。兩種方式擇一，
+同時使用橫條會畫兩次。
 
 ## 數字是怎麼算出來的
 
