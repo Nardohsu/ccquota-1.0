@@ -1,0 +1,20 @@
+{
+  "name": "ccquota",
+  "version": "0.1.0",
+  "description": "5-hour and weekly quota, context, cost, today's tokens and live sessions in a band above the prompt",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "script": {
+      "type": "string",
+      "title": "ccquota.py path",
+      "description": "Path to ccquota.py, used for today's tokens and the live session count",
+      "default": "F:/Projects/ccquota/ccquota.py"
+    },
+    "python": {
+      "type": "string",
+      "title": "Python executable",
+      "description": "Command that runs Python 3",
+      "default": "python"
+    }
+  }
+}

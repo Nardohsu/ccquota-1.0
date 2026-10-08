@@ -122,6 +122,26 @@ installed and the panel stays current; with no snapshot it falls back to the cac
 figures on disk and labels the source at the bottom, so a stale number is never presented
 as a live one.
 
+## Mod (desktop app)
+
+The status line never runs in the desktop app. `mod/` is a Claude Code mod that
+draws the same figures as a band above the prompt, in the desktop Code tab and
+the terminal alike:
+
+```
+5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  ·  $3.20  ·  ● 3
+```
+
+Quota, context and cost come from the engine itself (`$.session.usage()` and
+`session.measure`), so they are the live official figures. The cache hit rate is
+summed from this session's main-thread turns. Today's tokens and the live session
+count come from `python ccquota.py --local`. `/ccquota` hides or shows the band.
+
+Load it with `claude --plugin-dir /path/to/ccquota/mod`, or for the desktop app
+name that folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of
+`~/.claude/settings.json`. The path to `ccquota.py` and the Python command are
+settings of the mod (`/config`).
+
 ## Segments
 
 Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
@@ -300,6 +320,23 @@ python -m unittest discover -p "test_*.py"
 只有狀態列會拿到 Claude Code 餵的即時數字，所以彈窗讀的是狀態列每次執行時留下
 的快照。保持一個裝了 ccquota 的 CLI session 開著，彈窗的數字就一直是新的；沒有
 快照時會退回磁碟上的快取數字，並在底部標明來源 —— 過期的數字不會被當成即時的呈現。
+
+## Mod（桌面版）
+
+桌面版不會執行狀態列。`mod/` 是一個 Claude Code mod，把同樣的數字畫成輸入框上方
+的一條橫條，桌面版 Code 分頁和終端都能用：
+
+```
+5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  ·  $3.20  ·  ● 3
+```
+
+額度、context、花費直接取自引擎（`$.session.usage()` 與 `session.measure`），是即時
+的官方數字。快取命中率由本 session 主對話每一輪的用量累加。今日 token 與執行中
+session 數來自 `python ccquota.py --local`。輸入 `/ccquota` 可隱藏或顯示橫條。
+
+載入方式：`claude --plugin-dir /path/to/ccquota/mod`；桌面版則在
+`~/.claude/settings.json` 的 `env` 區塊用 `CLAUDE_CODE_PLUGIN_DIRS` 指向該資料夾。
+`ccquota.py` 路徑與 Python 指令是 mod 的設定項（`/config`）。
 
 ## 數字是怎麼算出來的
 
