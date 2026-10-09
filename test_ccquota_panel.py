@@ -11,6 +11,18 @@ import ccquota_panel as p
 
 
 class TestGuildData(unittest.TestCase):
+    def test_gather_includes_cached_codex(self):
+        codex = {"source": "app-server", "stale": False,
+                 "five_hour": {"percent": 19, "resets_at": 2000},
+                 "weekly": None, "reset_credits": 3, "at": 1000}
+        with patch.object(p.q, 'collect', return_value={}), \
+             patch.object(p.q, 'read_json', return_value={}), \
+             patch.object(p.q, 'official_limits', return_value={}), \
+             patch.object(p.q, 'live_sessions', return_value=[]), \
+             patch.object(p.q, 'codex_limits', return_value=codex) as limits:
+            self.assertEqual(p.gather()['codex'], codex)
+            limits.assert_called_once()
+
     def test_remaining_is_not_used_percentage(self):
         self.assertEqual(p.remaining_percent({'pct': 33}), 67)
         self.assertEqual(p.remaining_percent({'pct': 100}), 0)
@@ -30,7 +42,8 @@ class TestGuildData(unittest.TestCase):
         with patch.object(p.q, 'collect', return_value=entries), \
              patch.object(p.q, 'read_json', return_value={}), \
              patch.object(p.q, 'official_limits', return_value={}), \
-             patch.object(p.q, 'live_sessions', return_value=[]):
+             patch.object(p.q, 'live_sessions', return_value=[]), \
+             patch.object(p.q, 'codex_limits', return_value=None):
             data = p.gather()
         self.assertEqual(data['guild_tokens'], 100)
         self.assertIsNone(data['seven']['pct'])
@@ -51,7 +64,8 @@ class TestGuildWindow(unittest.TestCase):
         with patch.object(p.q, 'collect', return_value={}), \
              patch.object(p.q, 'read_json', return_value={}), \
              patch.object(p.q, 'official_limits', return_value={}), \
-             patch.object(p.q, 'live_sessions', return_value=[]):
+             patch.object(p.q, 'live_sessions', return_value=[]), \
+             patch.object(p.q, 'codex_limits', return_value=None):
             app = p.Panel()
             try:
                 self.pump(app)

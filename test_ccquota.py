@@ -10,6 +10,8 @@ import shutil
 import tempfile
 import time
 import unittest
+import io
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 import ccquota as q
@@ -564,6 +566,306 @@ class TestRender(TempConfig):
             self.assertIn("today", q.build({}))
         finally:
             os.environ.pop("CCQUOTA_SEGMENTS", None)
+
+
+class TestCodexParser(unittest.TestCase):
+    def result(self):
+        return {"rateLimits": {
+            "primary": {"usedPercent": 19, "windowDurationMins": 300, "resetsAt": 2000},
+            "secondary": {"usedPercent": 47, "windowDurationMins": 10080, "resetsAt": 5000}},
+            "rateLimitResetCredits": {"availableCount": 3,
+                                     "credits": [{"id": "private-credit"}]},
+            "accountId": "private-account"}
+
+    def test_by_limit_id_wins_and_private_ids_are_discarded(self):
+        r = self.result()
+        r["rateLimitsByLimitId"] = {"codex": dict(r["rateLimits"], primary={
+            "usedPercent": 88, "windowDurationMins": 300, "resetsAt": 2000})}
+        out = q.parse_codex_limits(r, 1000)
+        self.assertEqual(out["five_hour"]["percent"], 88)
+        self.assertEqual(out["reset_credits"], 3)
+        self.assertNotIn("private", json.dumps(out))
+
+    def test_duration_overrides_position(self):
+        r = self.result()
+        r["rateLimits"]["primary"], r["rateLimits"]["secondary"] = (
+            r["rateLimits"]["secondary"], r["rateLimits"]["primary"])
+        out = q.parse_codex_limits(r, 1000)
+        self.assertEqual(out["five_hour"]["percent"], 19)
+        self.assertEqual(out["weekly"]["percent"], 47)
+
+    def test_null_window(self):
+        r = self.result()
+        r["rateLimits"]["primary"] = None
+        out = q.parse_codex_limits(r, 1000)
+        self.assertIsNone(out["five_hour"])
+        self.assertEqual(out["weekly"]["percent"], 47)
+
+    def test_null_secondary_and_both_windows(self):
+        r = self.result()
+        r["rateLimits"]["secondary"] = None
+        out = q.parse_codex_limits(r, 1000)
+        self.assertEqual(out["five_hour"]["percent"], 19)
+        self.assertIsNone(out["weekly"])
+        r["rateLimits"]["primary"] = None
+        self.assertIsNone(q.parse_codex_limits(r, 1000)["five_hour"])
+
+    def test_missing_duration_uses_position(self):
+        r = self.result()
+        for w in r["rateLimits"].values():
+            del w["windowDurationMins"]
+        out = q.parse_codex_limits(r, 1000)
+        self.assertEqual(out["five_hour"]["percent"], 19)
+        self.assertEqual(out["weekly"]["percent"], 47)
+
+    def test_missing_credits_and_unsupported_duration(self):
+        r = self.result()
+        del r["rateLimitResetCredits"]
+        r["rateLimits"]["primary"]["windowDurationMins"] = 60
+        out = q.parse_codex_limits(r, 1000)
+        self.assertIsNone(out["reset_credits"])
+        self.assertIsNone(out["five_hour"])
+
+    def test_malformed_data_returns_none(self):
+        for r in (None, {}, {"rateLimits": []}, {"rateLimits": {"primary": {}}}):
+            self.assertIsNone(q.parse_codex_limits(r, 1000))
+
+
+class TestCodexLogs(TempConfig):
+    def write_log(self, name, records, mtime):
+        folder = os.path.join(self.dir, "sessions", "nested")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "rollout-" + name + ".jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for stamp, percent, reset in records:
+                fh.write(json.dumps({"timestamp": iso(stamp), "payload": {
+                    "rate_limits": {"limit_id": "codex", "primary": {
+                        "used_percent": percent, "window_minutes": 300,
+                        "resets_at": reset}, "secondary": None}}}) + "\n")
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def test_newest_object_across_files_wins(self):
+        self.write_log("a", [(800, 10, 2000), (950, 25, 2000)], 900)
+        self.write_log("b", [(850, 70, 2000)], 1000)
+        with patch.dict(os.environ, {"CODEX_HOME": self.dir}):
+            out = q.codex_log_limits(1000)
+        self.assertEqual(out["five_hour"]["percent"], 25)
+        self.assertTrue(out["stale"])
+        self.assertEqual(out["source"], "logs")
+
+    def test_expired_window_is_unknown(self):
+        self.write_log("a", [(950, 25, 999)], 1000)
+        with patch.dict(os.environ, {"CODEX_HOME": self.dir}):
+            out = q.codex_log_limits(1000)
+        self.assertIsNone(out["five_hour"])
+        self.assertTrue(out["stale"])
+
+    def test_missing_logs_returns_none(self):
+        with patch.dict(os.environ, {"CODEX_HOME": self.dir}):
+            self.assertIsNone(q.codex_log_limits(1000))
+
+    def test_tail_scan_and_newest_files_are_bounded(self):
+        old = self.write_log("old", [(9999, 99, 20000)], 1)
+        for i in range(8):
+            path = self.write_log(str(i), [(900+i, i, 2000)], 100+i)
+        with open(path, "rb") as fh:
+            record = fh.read()
+        with open(path, "wb") as fh:
+            fh.write(b"x" * (300 * 1024) + b"\n" + record)
+        os.utime(path, (107, 107))
+        with patch.dict(os.environ, {"CODEX_HOME": self.dir}):
+            out = q.codex_log_limits(1000)
+        self.assertEqual(out["five_hour"]["percent"], 7)
+
+
+class TestCodexCache(TempConfig):
+    def test_cache_for_sixty_seconds(self):
+        value = q.parse_codex_limits(TestCodexParser().result(), 1000)
+        with patch.object(q, "codex_app_server", return_value=value) as live, \
+             patch.object(q, "codex_log_limits") as logs:
+            self.assertEqual(q.codex_limits(1000), value)
+            self.assertEqual(q.codex_limits(1059), value)
+            self.assertEqual(live.call_count, 1)
+            q.codex_limits(1060)
+            self.assertEqual(live.call_count, 2)
+            logs.assert_not_called()
+        with open(os.path.join(os.path.dirname(q.cache_path()), "codex.json")) as fh:
+            self.assertEqual(json.load(fh)["codex"], value)
+
+    def test_failure_is_cached_and_logs_are_used(self):
+        with patch.object(q, "codex_app_server", return_value=None) as live, \
+             patch.object(q, "codex_log_limits", return_value=None) as logs:
+            self.assertIsNone(q.codex_limits(1000))
+            self.assertIsNone(q.codex_limits(1001))
+            live.assert_called_once()
+            logs.assert_called_once()
+
+    def test_concurrent_probe_is_not_launched(self):
+        lock = os.path.join(os.path.dirname(q.cache_path()), "codex.json.lock")
+        with open(lock, "w"):
+            pass
+        with patch.object(q, "codex_app_server") as live:
+            self.assertIsNone(q.codex_limits(1000))
+            live.assert_not_called()
+        self.assertTrue(os.path.exists(lock))
+
+    def test_log_fallback_and_atomic_write_failure(self):
+        value = q.parse_codex_limits(TestCodexParser().result(), 1000)
+        value.update(source="logs", stale=True)
+        with patch.object(q, "codex_app_server", return_value=None), \
+             patch.object(q, "codex_log_limits", return_value=value) as logs, \
+             patch.object(q.os, "replace", side_effect=OSError):
+            self.assertEqual(q.codex_limits(1000), value)
+            logs.assert_called_once_with(1000)
+        self.assertEqual(os.listdir(os.path.dirname(q.cache_path())), [])
+
+    def test_codex_flag_prints_only_json(self):
+        value = q.parse_codex_limits(TestCodexParser().result(), 1000)
+        output = io.StringIO()
+        with patch.object(q, "codex_limits", return_value=value), \
+             patch.object(q.sys, "argv", ["ccquota.py", "--codex"]), \
+             patch.object(q.sys, "stdout", output):
+            self.assertEqual(q.main(), 0)
+        self.assertEqual(json.loads(output.getvalue()), value)
+
+    def test_cached_log_window_expires(self):
+        value = {"source": "logs", "stale": True, "at": 1000, "reset_credits": None,
+                 "five_hour": {"percent": 25, "resets_at": 1020}, "weekly": None}
+        with patch.object(q, "codex_app_server", return_value=None), \
+             patch.object(q, "codex_log_limits", return_value=value):
+            self.assertEqual(q.codex_limits(1000), value)
+            self.assertIsNone(q.codex_limits(1021)["five_hour"])
+
+    def test_local_output_and_status_segment(self):
+        value = q.parse_codex_limits(TestCodexParser().result(), 1000)
+        with patch.object(q, "codex_limits", return_value=value), \
+             patch.object(q, "live_sessions", return_value=[]), \
+             patch.dict(os.environ, {"CCQUOTA_SEGMENTS": "cx"}):
+            self.assertEqual(q.local_figures()["codex"], value)
+            self.assertIn("19%", q.build({}))
+            self.assertIn("47%", q.build({}))
+            value["stale"] = True
+            self.assertIn("~", q.build({}))
+        with patch.object(q, "codex_limits", return_value=None), \
+             patch.dict(os.environ, {"CCQUOTA_SEGMENTS": "cx"}):
+            self.assertEqual(q.build({}), "")
+        self.assertNotIn("cx", q.DEFAULT_SEGMENTS.split(","))
+
+
+class TestCodexExecutable(TempConfig):
+    def test_override_and_cmd_rejection(self):
+        exe = self.write("custom.exe", "")
+        cmd = self.write("codex.cmd", "")
+        with patch.dict(os.environ, {"CODEX_CLI_PATH": exe}):
+            self.assertEqual(q.codex_executable(), exe)
+        with patch.dict(os.environ, {"CODEX_CLI_PATH": cmd}):
+            self.assertIsNone(q.codex_executable())
+        with patch.dict(os.environ, {"CODEX_CLI_PATH": exe + ".missing.exe"}):
+            self.assertIsNone(q.codex_executable())
+
+    def test_newest_native_binary(self):
+        paths = []
+        for i in range(2):
+            folder = os.path.join(self.dir, "OpenAI", "Codex", "bin", str(i))
+            os.makedirs(folder)
+            path = os.path.join(folder, "codex.exe")
+            with open(path, "w"):
+                pass
+            os.utime(path, (100+i, 100+i))
+            paths.append(path)
+        with patch.dict(os.environ, {"LOCALAPPDATA": self.dir, "CODEX_CLI_PATH": ""}):
+            self.assertEqual(q.codex_executable(), paths[-1])
+
+
+class TestCodexAppServer(unittest.TestCase):
+    def process(self, lines):
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO(lines)
+                self.killed = self.waited = False
+                self.sent = None
+
+            def kill(self):
+                self.sent = self.stdin.getvalue()
+                self.killed = True
+
+            def wait(self):
+                self.waited = True
+        return FakeProcess()
+
+    def test_protocol_ignores_notifications_and_cleans_up(self):
+        lines = [ {"method": "account/updated"}, {"id": 1, "result": {}},
+                  {"id": 99, "result": {}},
+                  {"id": 2, "result": TestCodexParser().result()} ]
+        proc = self.process("".join(json.dumps(x) + "\n" for x in lines))
+        with patch.object(q, "codex_executable", return_value="fake.exe"), \
+             patch.object(q.subprocess, "Popen", return_value=proc) as popen:
+            out = q.codex_app_server(1000)
+        self.assertEqual(out["five_hour"]["percent"], 19)
+        self.assertTrue(proc.killed and proc.waited)
+        self.assertTrue(proc.stdin.closed and proc.stdout.closed)
+        sent = [json.loads(x) for x in proc.sent.splitlines()]
+        self.assertEqual([x["method"] for x in sent],
+                         ["initialize", "initialized", "account/rateLimits/read"])
+        self.assertTrue(sent[0]["params"]["capabilities"]["experimentalApi"])
+        self.assertEqual(popen.call_args.kwargs["stderr"], q.subprocess.DEVNULL)
+
+    def test_failures_return_none_and_clean_up(self):
+        for lines in ('bad json\n', '', '{"id":1,"error":{}}\n',
+                      '{"id":1,"result":{}}\n{"id":2,"result":{}}\n'):
+            proc = self.process(lines)
+            with patch.object(q, "codex_executable", return_value="fake.exe"), \
+                 patch.object(q.subprocess, "Popen", return_value=proc):
+                self.assertIsNone(q.codex_app_server(1000))
+            self.assertTrue(proc.killed and proc.waited)
+        with patch.object(q, "codex_executable", return_value="fake.exe"), \
+             patch.object(q.subprocess, "Popen", side_effect=OSError):
+            self.assertIsNone(q.codex_app_server(1000))
+
+    def test_no_executable_does_not_spawn(self):
+        with patch.object(q, "codex_executable", return_value=None), \
+             patch.object(q.subprocess, "Popen") as popen:
+            self.assertIsNone(q.codex_app_server(1000))
+            popen.assert_not_called()
+
+    def test_deadline_is_shared_across_requests(self):
+        proc = self.process('{"id":1,"result":{}}\n')
+        with patch.object(q, "codex_executable", return_value="fake.exe"), \
+             patch.object(q.subprocess, "Popen", return_value=proc), \
+             patch.object(q.time, "monotonic", side_effect=[0, 0, 9]):
+            self.assertIsNone(q.codex_app_server(1000))
+        self.assertTrue(proc.killed and proc.waited)
+
+    def test_timeout_kills_and_waits(self):
+        import threading
+        stopped = threading.Event()
+
+        class BlockingReader:
+            def __iter__(self):
+                stopped.wait(2)
+                return iter(())
+
+            def close(self):
+                pass
+
+        proc = self.process("")
+        proc.stdout = BlockingReader()
+        original_kill = proc.kill
+
+        def kill():
+            original_kill()
+            stopped.set()
+
+        proc.kill = kill
+        with patch.object(q, "codex_executable", return_value="fake.exe"), \
+             patch.object(q.subprocess, "Popen", return_value=proc), \
+             patch.object(q, "CODEX_TIMEOUT", .03):
+            started = time.monotonic()
+            self.assertIsNone(q.codex_app_server(1000))
+            self.assertLess(time.monotonic() - started, 1)
+        self.assertTrue(proc.killed and proc.waited)
 
 
 if __name__ == "__main__":

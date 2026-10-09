@@ -166,6 +166,23 @@ Every session started after that loads it, in the desktop app and the terminal a
 `claude --plugin-dir /path/to/ccquota/mod` does the same. Use one way or the other,
 not both, or the band is drawn twice.
 
+## Codex
+
+ccquota also shows your Codex (OpenAI) 5-hour and weekly limits, in the mod band
+(`Codex 5h 34% 週 49%`), in the panel's details window, and as the opt-in `cx`
+status-line segment. `python ccquota.py --codex` prints them as JSON.
+
+The figures come live from Codex's own local app-server: ccquota starts
+`codex.exe app-server`, asks `account/rateLimits/read`, and closes it again, about
+one second, reused for 60 seconds. It uses the desktop app's bundled `codex.exe`
+(the newest `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`), or the one named
+in `CODEX_CLI_PATH`; the npm `codex.cmd` shim is not used. That request is an
+experimental Codex API, so when it fails ccquota falls back to the last figures
+in `~/.codex/sessions`, marked `~` as possibly stale, and drops any window that has
+already reset. Without Codex installed the Codex figures simply do not appear.
+
+The approach follows [codex-usage-companion](https://github.com/gkfriend/codex-usage-companion) (MIT); no code is taken from it.
+
 ## Segments
 
 Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
@@ -181,6 +198,7 @@ Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
 | `model` | Model display name | Host payload |
 | `today` | Tokens since local midnight, across every project | Transcripts |
 | `agents` | Number of Claude Code processes running | `sessions/*.json` plus a liveness check |
+| `cx` | Codex 5-hour and weekly limits (not shown by default) | Codex app-server, else `~/.codex/sessions` |
 
 Green below 70%, yellow from 70%, red from 90%.
 
@@ -225,7 +243,7 @@ Green below 70%, yellow from 70%, red from 90%.
 
 ## Privacy
 
-Reads local files, writes one cache file, and makes no network requests. It parses token counts and timestamps out of your transcripts; it never reads message content, and never touches your credentials.
+Reads local files, writes its own cache files, and makes no network requests itself. For the Codex figures it starts your local `codex.exe app-server`, which asks OpenAI for your limits with Codex's own sign-in; ccquota never reads that sign-in and does not store your account id. It parses token counts and timestamps out of your transcripts; it never reads message content, and never touches your credentials.
 
 ## License
 
@@ -385,6 +403,20 @@ session 也會載入。設定畫面中把 `script` 改成你自己的 `ccquota.p
 終端機 session 用，可改用 `claude --plugin-dir /path/to/ccquota/mod`。兩種方式擇一，
 同時使用橫條會畫兩次。
 
+## Codex
+
+ccquota 也會顯示 Codex（OpenAI）的 5 小時與每週額度：mod 橫條（`Codex 5h 34% 週 49%`）、
+面板的用量明細，以及需要自行開啟的狀態列區段 `cx`。`python ccquota.py --codex` 會以 JSON 輸出。
+
+數字直接取自 Codex 本機的 app-server：ccquota 啟動 `codex.exe app-server`，送出
+`account/rateLimits/read` 後關閉，約一秒，結果沿用 60 秒。使用桌面版內附的 `codex.exe`
+（`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe` 中最新的一個），或 `CODEX_CLI_PATH`
+指定的路徑；不使用 npm 的 `codex.cmd`。這是 Codex 的實驗性 API，失敗時改讀
+`~/.codex/sessions` 裡最後一筆，標上 `~` 表示可能過時，已經重置的窗口直接不顯示。
+沒裝 Codex 時不會出現 Codex 的數字。
+
+做法參考 [codex-usage-companion](https://github.com/gkfriend/codex-usage-companion)（MIT），沒有使用它的程式碼。
+
 ## 數字是怎麼算出來的
 
 **stdin payload 是權威來源。** Claude Code 每次執行狀態列都會用管線餵進一包 JSON，裡面有 `rate_limits.five_hour` 和 `rate_limits.seven_day`（含即時的 `used_percentage` 與 `resets_at`）、`context_window`（含真實的 `context_window_size`）、還有 `prompt_cache`、`cost`、`model`、`workspace`。凡是那裡有的就直接用 —— 不估算、不會過期。以下所有機制都只是給太舊、不送這包資料的版本用的。
@@ -413,7 +445,7 @@ session 也會載入。設定畫面中把 `script` 改成你自己的 `ccquota.p
 
 ## 隱私
 
-只讀本機檔案、只寫一個快取檔、完全不連網。它從 transcript 解析 token 數與時間戳，不讀訊息內容，也不碰任何憑證。
+只讀本機檔案、只寫自己的快取檔，本身不連網。Codex 的數字是啟動本機的 `codex.exe app-server`，由它用 Codex 自己的登入向 OpenAI 查詢；ccquota 不讀那份登入資料，也不儲存帳號 ID。它從 transcript 解析 token 數與時間戳，不讀訊息內容，也不碰任何憑證。
 
 ## 授權
 

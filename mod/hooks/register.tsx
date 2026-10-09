@@ -77,6 +77,7 @@ async function refreshLocal($: EngineInterface, python: string, script: string) 
       todayTokens: Number(j.today_tokens) || 0,
       todayRequests: Number(j.today_requests) || 0,
       sessions: Number(j.sessions) || 0,
+      codex: j.codex ?? null,
       at: await $.clock.now(),
     }
     await update($, local, () => next)
@@ -205,6 +206,21 @@ export const register: Register = (on, options) => {
             {sep}
             <Text color="success">●</Text>
             <Text>{` ${l.sessions}`}</Text>
+          </Box>
+        )}
+        {l?.codex && (
+          <Box key="codex" flexDirection="row">
+            {sep}
+            <Text dimColor>Codex </Text>
+            {l.codex.stale && <Text dimColor>~</Text>}
+            <Text dimColor>{LABEL.five_hour} </Text>
+            <Text color={tone(l.codex.five_hour?.percent)}>
+              {l.codex.five_hour ? `${l.codex.five_hour.percent}%` : '?'}
+            </Text>
+            <Text dimColor>{` ${LABEL.seven_day} `}</Text>
+            <Text color={tone(l.codex.weekly?.percent)}>
+              {l.codex.weekly ? `${l.codex.weekly.percent}%` : '?'}
+            </Text>
           </Box>
         )}
       </Box>

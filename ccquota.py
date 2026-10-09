@@ -9,6 +9,12 @@ No network calls, no dependencies, stdlib only.
 from __future__ import annotations
 
 import json
+import glob
+import math
+import queue
+import subprocess
+import tempfile
+import threading
 import os
 import sys
 import time
@@ -92,6 +98,259 @@ def read_json(path, default=None):
             return json.load(fh)
     except (OSError, ValueError):
         return {} if default is None else default
+
+
+# --- Codex quota -----------------------------------------------------------
+
+CODEX_TIMEOUT = 8.0
+CODEX_CACHE_SECONDS = 60
+
+
+def codex_executable():
+    """Find the native binary; never launch a shell/npm shim."""
+    try:
+        override = os.environ.get("CODEX_CLI_PATH")
+        if override:
+            return override if (override.lower().endswith(".exe")
+                                and os.path.isfile(override)) else None
+        root = os.environ.get("LOCALAPPDATA")
+        if not root:
+            return None
+        paths = glob.glob(os.path.join(root, "OpenAI", "Codex", "bin", "*", "codex.exe"))
+        paths = [p for p in paths if os.path.isfile(p)]
+        return max(paths, key=os.path.getmtime) if paths else None
+    except OSError:
+        return None
+
+
+def parse_codex_limits(result, now, source="app-server"):
+    """Normalize only quota fields; discard all account and credit IDs."""
+    try:
+        by_id = result.get("rateLimitsByLimitId") or {}
+        limits = by_id.get("codex")
+        if limits is None:
+            limits = result.get("rateLimits")
+        if not isinstance(limits, dict):
+            return None
+        out = {"source": source, "stale": source == "logs", "five_hour": None,
+               "weekly": None, "reset_credits": None, "at": int(now)}
+        snake = source == "logs"
+        duration_key = "window_minutes" if snake else "windowDurationMins"
+        percent_key = "used_percent" if snake else "usedPercent"
+        reset_key = "resets_at" if snake else "resetsAt"
+        for slot, fallback in (("primary", "five_hour"), ("secondary", "weekly")):
+            window = limits.get(slot)
+            if window is None:
+                continue
+            duration = window.get(duration_key)
+            key = {300: "five_hour", 10080: "weekly"}.get(duration)
+            if duration is None:
+                key = fallback
+            if key is None:
+                continue
+            percent = window[percent_key]
+            resets = window[reset_key]
+            if (isinstance(percent, bool) or not isinstance(percent, (int, float))
+                    or not math.isfinite(percent) or not 0 <= percent <= 100
+                    or isinstance(resets, bool) or not isinstance(resets, (int, float))
+                    or not math.isfinite(resets) or resets <= 0):
+                return None
+            if source == "logs" and resets <= now:
+                continue
+            out[key] = {"percent": int(round(percent)), "resets_at": int(resets)}
+        credits = (result.get("rateLimitResetCredits") or {}).get("availableCount")
+        if isinstance(credits, int) and not isinstance(credits, bool) and credits >= 0:
+            out["reset_credits"] = credits
+        return out
+    except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def codex_app_server(now):
+    """Read one live reply with a bounded lifetime, including initialization."""
+    proc = None
+    reader = None
+    try:
+        executable = codex_executable()
+        if not executable:
+            return None
+        deadline = time.monotonic() + CODEX_TIMEOUT
+        proc = subprocess.Popen(
+            [executable, "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        replies = queue.Queue()
+
+        def read_lines():
+            try:
+                for raw in proc.stdout:
+                    try:
+                        replies.put(json.loads(raw))
+                    except ValueError:      # a stray log line is not a reply
+                        continue
+            except Exception:
+                pass
+            finally:
+                replies.put(None)
+
+        reader = threading.Thread(target=read_lines, daemon=True)
+        reader.start()
+
+        def send(message):
+            proc.stdin.write(json.dumps(message) + "\n")
+            proc.stdin.flush()
+
+        def receive(request_id):
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                reply = replies.get(timeout=remaining)
+                if reply is None:
+                    return None
+                if not isinstance(reply, dict):
+                    return None
+                if reply.get("id") == request_id:
+                    if "error" in reply or not isinstance(reply.get("result"), dict):
+                        return None
+                    return reply["result"]
+
+        send({"id": 1, "method": "initialize", "params": {
+            "clientInfo": {"name": "ccquota", "version": __version__},
+            "capabilities": {"experimentalApi": True}}})
+        if receive(1) is None:
+            return None
+        send({"method": "initialized"})
+        send({"id": 2, "method": "account/rateLimits/read"})
+        return parse_codex_limits(receive(2), now)
+    except Exception:
+        return None
+    finally:
+        if proc is not None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.wait()
+            except OSError:
+                pass
+            if reader is not None:
+                reader.join(timeout=1)
+            for stream in (proc.stdin, proc.stdout):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+
+
+def codex_log_limits(now):
+    """Scan bounded tails of the eight newest logs, not entire transcripts."""
+    try:
+        home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+        paths = glob.glob(os.path.join(home, "sessions", "**", "rollout-*.jsonl"),
+                          recursive=True)
+        paths.sort(key=os.path.getmtime, reverse=True)
+        newest = None
+        newest_key = None
+        for path in paths[:8]:
+            try:
+                with open(path, "rb") as fh:
+                    size = fh.seek(0, os.SEEK_END)
+                    offset = max(0, size - 256 * 1024)
+                    fh.seek(offset)
+                    if offset:
+                        fh.readline()
+                    lines = fh.read().splitlines()
+                for index, raw in enumerate(lines):
+                    if b'"rate_limits"' not in raw:
+                        continue
+                    try:
+                        record = json.loads(raw)
+                        limits = (record.get("payload") or {}).get("rate_limits")
+                        if limits is None:
+                            limits = record.get("rate_limits")
+                        if not isinstance(limits, dict) or limits.get("limit_id") != "codex":
+                            continue
+                        parsed = parse_codex_limits({"rateLimits": limits}, now, "logs")
+                        if parsed is None:
+                            continue
+                        stamp = parse_iso(record.get("timestamp"))
+                        key = (stamp if stamp is not None else os.path.getmtime(path),
+                               os.path.getmtime(path), index)
+                        if newest_key is None or key > newest_key:
+                            newest, newest_key = parsed, key
+                    except (ValueError, TypeError, AttributeError):
+                        continue
+            except OSError:
+                continue
+        return newest
+    except Exception:
+        return None
+
+
+def codex_limits(now):
+    """Share a one-minute cache, including failures, across all consumers."""
+    tmp = None
+    lock = None
+    try:
+        path = os.path.join(os.path.dirname(cache_path()), "codex.json")
+        cached = read_json(path)
+        if (isinstance(cached, dict) and "codex" in cached
+                and 0 <= now - cached.get("at", 0) < CODEX_CACHE_SECONDS):
+            value = cached["codex"]
+            # A log window can expire even during the cache's short lifetime.
+            if isinstance(value, dict) and value.get("source") == "logs":
+                for key in ("five_hour", "weekly"):
+                    if value.get(key) and value[key]["resets_at"] <= now:
+                        value[key] = None
+            return value
+        # Multiple panels/mods can miss the cache together. Only one may
+        # probe; the next refresh of other consumers will see its cache.
+        lock_path = path + ".lock"
+        try:
+            if time.time() - os.path.getmtime(lock_path) > CODEX_TIMEOUT + 2:
+                os.unlink(lock_path)
+        except FileNotFoundError:
+            pass
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            return None
+        lock = lock_path
+        os.close(fd)
+        # Another process may have completed between our read and lock.
+        cached = read_json(path)
+        if (isinstance(cached, dict) and "codex" in cached
+                and 0 <= now - cached.get("at", 0) < CODEX_CACHE_SECONDS):
+            return cached["codex"]
+        value = codex_app_server(now)
+        if value is None:
+            value = codex_log_limits(now)
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                             dir=os.path.dirname(path), delete=False) as fh:
+                tmp = fh.name
+                json.dump({"at": now, "codex": value}, fh)
+            os.replace(tmp, path)
+            tmp = None
+        except OSError:
+            pass
+        return value
+    except Exception:
+        return None
+    finally:
+        if lock is not None:
+            try:
+                os.unlink(lock)
+            except OSError:
+                pass
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 # --- official quota anchor --------------------------------------------------
@@ -562,6 +821,19 @@ def build(data):
             tail = paint(DIM, " " + dur(left)) if left is not None else ""
             parts.append("wk " + paint(level(frac), body) + tail)
 
+        elif seg == "cx":
+            cx = codex_limits(now)
+            if cx is not None:
+                values = []
+                for key, label in (("five_hour", "5h"), ("weekly", "wk")):
+                    window = cx.get(key)
+                    body = (paint(level(window["percent"] / 100.0),
+                                  "{}%".format(window["percent"])) if window
+                            else paint(DIM, "?"))
+                    values.append(label + " " + body)
+                marker = paint(DIM, "~") if cx.get("stale") else ""
+                parts.append("cx " + marker + " ".join(values))
+
         elif seg == "cache":
             pc = data.get("prompt_cache") or {}
             ratio = pc.get("hit_ratio")
@@ -603,10 +875,14 @@ def local_figures():
                                       microsecond=0).timestamp()
     tok, cache_read, count = window_sum(collect(now), midnight, now)
     return {"today_tokens": tok, "today_cache_read": cache_read,
-            "today_requests": count, "sessions": len(live_sessions(now))}
+            "today_requests": count, "sessions": len(live_sessions(now)),
+            "codex": codex_limits(now)}
 
 
 def main():
+    if "--codex" in sys.argv:
+        print(json.dumps(codex_limits(time.time())))
+        return 0
     if "--local" in sys.argv:
         print(json.dumps(local_figures()))
         return 0

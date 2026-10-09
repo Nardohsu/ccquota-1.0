@@ -6,7 +6,18 @@ export type Quota = {
   costUsd?: number
 }
 
+export type CodexWindow = { percent: number; resets_at: number }
+export type Codex = {
+  source: 'app-server' | 'logs'
+  stale: boolean
+  five_hour: CodexWindow | null
+  weekly: CodexWindow | null
+  reset_credits: number | null
+  at: number
+}
+
 export type Local = {
+  codex?: Codex | null
   todayTokens: number
   todayRequests: number
   sessions: number

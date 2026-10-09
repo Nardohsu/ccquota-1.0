@@ -16,14 +16,21 @@ const MEASURE = {
   changed: ['context', 'rateLimits', 'cost'],
 } as const
 
+const CODEX = {
+  source: 'app-server', stale: false, at: 1000, reset_credits: 3,
+  five_hour: { percent: 19, resets_at: 2000 },
+  weekly: { percent: 47, resets_at: 5000 },
+}
+
 const LOCAL = JSON.stringify({
+  codex: CODEX,
   today_tokens: 2_947_475, today_cache_read: 0, today_requests: 400, sessions: 3,
 })
 
 // Nothing stands beneath the plugin in a test, so the test answers for the
 // engine: ccquota.py through process.run, and the session's own events.
-function fakePython(on: any) {
-  on('process.run', () => ({ value: { exitCode: 0, stdout: LOCAL, stderr: '' } }))
+function fakePython(on: any, stdout = LOCAL) {
+  on('process.run', () => ({ value: { exitCode: 0, stdout, stderr: '' } }))
   on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
   on('session.measure', (_$: any, e: any) => ({ changed: e.changed }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [] } }))
@@ -107,3 +114,32 @@ test('cache hit rate sums the main thread and ignores subagents', async ($: any,
   expect(await ui.find({ type: 'Text', text: ' cold' })).toBeDefined()
   await ui.unmount()
 })
+
+
+for (const state of ['present', 'stale', 'null'] as const) {
+  test(`the Codex segment is ${state}`, async ($: any, on) => {
+    fakePython(on, JSON.stringify({
+      today_tokens: 0, today_requests: 0, sessions: 0,
+      codex: state === 'null' ? null : { ...CODEX, stale: state === 'stale' },
+    }))
+    await $.session.start({ source: 'startup', cwd: 'F:/Projects/ccquota' })
+    await $.session.measure(MEASURE)
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({ ...BAND, surface })
+      if (state === 'null') {
+        expect(await ui.find({ type: 'Text', text: 'Codex ' })).toBeUndefined()
+        expect(await ui.find({ type: 'Text', text: '19%' })).toBeUndefined()
+      } else {
+        expect(await ui.find({ type: 'Text', text: 'Codex ' })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: '19%' })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: '47%' })).toBeDefined()
+      }
+      if (state === 'stale') {
+        expect(await ui.find({ type: 'Text', text: '~' })).toBeDefined()
+      } else {
+        expect(await ui.find({ type: 'Text', text: '~' })).toBeUndefined()
+      }
+      await ui.unmount()
+    }
+  })
+}

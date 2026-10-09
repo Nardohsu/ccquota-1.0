@@ -25,6 +25,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ccquota as q
 from ccquota_scene import ScenePlayer
 
+CODEX_TEXT = {
+    "title": "Codex", "five_hour": "5 小時",
+    "weekly": "每週", "credits": "可用的免費重置",
+    "logs": "讀不到 Codex 即時數字，以下取自對話紀錄，可能過時", "unknown": "未知",
+    "reset": "重置於",
+}
+
 REFRESH_MS = 30000
 SNAPSHOT_MAX_AGE = 900     # 超過就不再顯示 session 層級的數字
 WIDTH = 430
@@ -115,7 +122,7 @@ def gather():
     now = time.time()
     snap = q.read_json(q.snapshot_path())
     official = q.official_limits(now)
-    out = {"now": now}
+    out = {"now": now, "codex": q.codex_limits(now)}
 
     entries = q.collect(now)
     out["five"] = resolve_limit(snap, official, "five_hour", "session", now, entries)
@@ -265,6 +272,30 @@ class UsageDetails(tk.Toplevel):
         self.limit_block(limits, "5 小時限制", d["five"], "%H:%M")
         tk.Frame(limits, bg=LINE, height=1).pack(fill="x", padx=14, pady=12)
         self.limit_block(limits, "每週 · 全模型", d["seven"], "%m/%d %H:%M")
+
+        cx = d.get("codex")
+        if cx is not None:
+            codex = self.card(self.body)
+            self.heading(codex, CODEX_TEXT["title"])
+            for key, fmt in (("five_hour", "%H:%M"), ("weekly", "%m/%d %H:%M")):
+                window = cx.get(key)
+                pct = window["percent"] if window else None
+                value = "{}%".format(pct) if pct is not None else CODEX_TEXT["unknown"]
+                self.row(codex, CODEX_TEXT[key], value,
+                         lc=FG, rc=tone(pct), lf=11, rf=13, bold=True)
+                if window:
+                    resets = window["resets_at"]
+                    when = "{} {} ({})".format(
+                        CODEX_TEXT["reset"], datetime.fromtimestamp(resets).strftime(fmt),
+                        q.dur(resets - time.time()))
+                    self.row(codex, when, "", lc=DIM, lf=8)
+                self.bar(codex, pct, tone(pct))
+            credits = cx.get("reset_credits")
+            self.row(codex, CODEX_TEXT["credits"],
+                     str(credits) if credits is not None else CODEX_TEXT["unknown"],
+                     lc=MUTE, rc=FG)
+            if cx.get("source") == "logs":
+                self.row(codex, CODEX_TEXT["logs"], "", lc=DIM, lf=8)
 
         session = self.card(self.body)
         self.heading(session, "本次 session")

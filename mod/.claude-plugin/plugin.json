@@ -1,6 +1,6 @@
 {
   "name": "ccquota",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "5-hour and weekly quota, context, cost, today's tokens and live sessions in a band above the prompt",
   "author": {
     "name": "Nardohsu"
