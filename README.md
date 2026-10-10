@@ -1,48 +1,93 @@
 # ccquota
 
-A local usage dashboard for [Claude Code](https://claude.com/claude-code). It shows how
-much of your 5-hour and weekly quota is left and when each resets, what today has cost,
-and how many Claude Code sessions are actually running — all read from files Claude Code
-already writes on your machine. No network calls, no pip packages.
+**English** · [繁體中文](README.zh-Hant.md)
 
-It comes in two forms over one shared data layer:
+A local usage dashboard for [Claude Code](https://claude.com/claude-code), and for Codex
+too. It shows how much of your 5-hour and weekly quota is left and when each resets, how
+many tokens today has used, and how many Claude Code sessions are actually running.
+Everything comes from files Claude Code already writes on your machine. Python standard
+library only: nothing to build, nothing to pip install.
 
-**A panel** — a dark pixel-adventure guild dashboard. Weekly quota as a stamina bar, a
-camp scene showing your running sessions, and the full statistics one click behind it.
+The quota figures are the official ones, the same numbers `/usage` shows, not estimates.
 
-**A status line** — the same figures compressed into the line under the Claude Code
-prompt:
+## Three ways to see it
+
+| | Where it appears | Works in |
+|---|---|---|
+| [**Mod**](#mod) | A band above the prompt | Desktop app Code tab and terminal |
+| [**Status line**](#status-line) | The line under the prompt | Terminal (CLI) only |
+| [**Panel**](#panel) | Its own window, a pixel-art guild dashboard | Anywhere |
 
 ```
-ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
+Mod          5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  ·  $3.20  ·  ● 3  ·  Codex 5h 34% 週 49%
+Status line  ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
 ```
 
-The quota figures are the real ones. Claude Code hands its status line a live
-`rate_limits` object on every invocation, so `5h` and `wk` are the same numbers `/usage`
-shows, not an estimate.
+If you use the desktop app, start with the mod. The desktop app does not run status line
+commands.
 
 ## Install
 
-Requires Python 3.7+. The panel also needs tkinter, which ships with python.org builds
-and most distributions (`apt install python3-tk` on Debian and Ubuntu).
+Requires Python 3.7+. The panel also needs tkinter, which ships with the python.org
+installers and most distributions (`apt install python3-tk` on Debian and Ubuntu).
 
 ```bash
 git clone https://github.com/Nardohsu/ccquota-1.0.git
 ```
 
-That is the whole installation — there is nothing to build and nothing to pip install.
+That is the whole installation. Then set up whichever of the three you want.
 
-## Run
+## Mod
 
-### The panel
+A Claude Code mod in `mod/` that draws a band above the prompt, in the desktop Code tab
+and in the terminal alike. Type `/ccquota` to hide or show it.
 
-```bash
-python ccquota_panel.py
+### Install from GitHub
+
+In a terminal `claude` session (this command is not available in the desktop Code tab):
+
+```
+/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
 ```
 
-On Windows, double-click `panel.bat` to open it without a console window.
+Answer `y` to add the marketplace, then choose the **user** scope; at that scope it also
+loads in the sessions the desktop app starts. On the settings screen, point `script` at
+your own `ccquota.py` (the default is the author's path) and `python` at your Python 3
+command. Both can be changed later in `/config`. Run `claude plugin update` to pick up
+new versions.
 
-### The status line
+### Or run it from your clone
+
+To have your own edits take effect without reinstalling, name the `mod` folder in the
+`env` block of `~/.claude/settings.json`:
+
+```json
+"env": {
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota-1.0/mod"
+}
+```
+
+Every session started after that loads it, in the desktop app and the terminal alike.
+Conversations that were already open load it once they are restarted. For a single
+terminal session, `claude --plugin-dir /path/to/ccquota-1.0/mod` does the same. Use one
+of these or the marketplace install, not both, or the band is drawn twice.
+
+### What the band shows
+
+| Part | Meaning | Source |
+|---|---|---|
+| `5h` / `週` | 5-hour and weekly quota used, time to reset | The engine itself, live |
+| `ctx` | This conversation's context fill | The engine itself |
+| `cache` | Prompt cache hit rate of this conversation; `cold` when the last turn missed | Summed from each finished turn |
+| `今日` | Tokens since local midnight, all projects | `ccquota.py --local` |
+| `$` | This conversation's cost | The engine itself |
+| `●` | Claude Code processes running | `ccquota.py --local` |
+| `Codex` | Codex 5-hour and weekly quota (see [Codex](#codex)) | `ccquota.py --local` |
+
+Green below 70%, yellow from 70%, red from 90%. For `cache` it is the other way round:
+a low hit rate is the warning, because every miss re-sends the whole context.
+
+## Status line
 
 Point Claude Code at it in `~/.claude/settings.json`, then restart Claude Code:
 
@@ -50,14 +95,14 @@ Point Claude Code at it in `~/.claude/settings.json`, then restart Claude Code:
 {
   "statusLine": {
     "type": "command",
-    "command": "python /path/to/ccquota/ccquota.py",
+    "command": "python /path/to/ccquota-1.0/ccquota.py",
     "refreshInterval": 300
   }
 }
 ```
 
 On Windows, backslashes need escaping in JSON:
-`"python C:\\Users\\you\\ccquota\\ccquota.py"`.
+`"python C:\\Users\\you\\ccquota-1.0\\ccquota.py"`.
 
 To see the line without wiring anything up:
 
@@ -65,125 +110,18 @@ To see the line without wiring anything up:
 python ccquota.py --test
 ```
 
-**The desktop app did not run status line commands** when this was tested, on the 2.1.247
-build it ships with. It reads `settings.json` - plugins and hooks from the same file take
-effect - but the `statusLine` key was ignored, verified by a command that was never
-invoked across a clean restart with trust accepted and hooks enabled, while the same
-setup worked immediately in the CLI. The desktop app bundles its own Claude Code build
-separate from the one on your PATH, so check your own version before assuming this still
-holds. Use the CLI if the line does not appear.
+`refreshInterval` (seconds, minimum 1) re-runs the line on a timer as well. It adds to the
+event triggers rather than replacing them, so sending a message still updates the line at
+once; the timer only covers idle stretches, when the number would otherwise freeze. A run
+takes about 60 to 100 ms, so 300 seconds costs nothing measurable and 10 seconds about 1%
+of one core. Under 5 seconds is wasted, as quota does not move that fast.
 
-`refreshInterval` (seconds, minimum 1) re-runs the line on a timer. It **adds** a timer
-rather than replacing the event triggers, so a sent message still updates the line
-immediately; the timer only covers the idle stretches. Without it, a window left open
-while you work elsewhere shows a frozen number. At roughly 60-100 ms a run, 300 seconds
-costs nothing worth measuring and 10 seconds costs about 1% of one core. Anything under
-5 seconds is wasted, since quota does not move that fast.
+The desktop app ignored the `statusLine` key when this was tested on its bundled 2.1.247
+build, while the same setup worked at once in the CLI. The desktop app ships its own
+Claude Code build, separate from the one on your PATH, so check your version; the mod
+works in both.
 
-### Checking it works
-
-```bash
-python -m unittest discover -p "test_*.py"
-```
-
-## Panel
-
-The three cards show remaining weekly quota, local tokens from the last seven days, and
-today's local tokens. The camp scene shows the active Claude Code session count. Click
-the expedition area, press Ctrl+D, or choose **選項 → 用量明細** to open the full
-statistics in a scrollable window: both limits, context and cache, model breakdown,
-attribution, and running sessions.
-
-The guild asset count is explicitly a rolling seven-day token count, not a lifetime total
-or a currency balance. Unknown official quota is shown as a dash; local estimates are
-never converted into an official percentage.
-
-The panel refreshes every 30 seconds and collects in the background so the window stays
-responsive. F5 refreshes, Ctrl+D opens details, and **選項 → 視窗保持置頂** toggles
-always-on-top.
-
-Scenes are chosen randomly from the `assets` directory at startup and at local system
-time **09:00 and 18:00** daily. **選項 → 隨機切換場景** switches manually. Each change
-fades the old scene out and the new one in over two seconds; text and controls remain
-visible. The next image differs from the current one when another valid image is
-available. Supported formats: PNG, GIF (first frame), PPM and PGM. Add images directly to
-`assets`; the folder is rescanned on every switch. Unreadable images are skipped. With
-one valid image it stays in place; with no images the dashboard still works.
-
-Scheduling runs inside the panel, so keep it open for automatic changes. After sleep, the
-panel catches up once if a 09:00/18:00 boundary was missed; it does not replay every
-missed change. Midnight does not trigger a change. Scene transitions use
-`ccquota_scene.py`, Tkinter and the Python standard library, with no extra packages or
-network access.
-
-Only the status line is handed live figures by Claude Code, so the panel reads a snapshot
-the status line writes on each invocation. Keep a CLI session running with ccquota
-installed and the panel stays current; with no snapshot it falls back to the cached
-figures on disk and labels the source at the bottom, so a stale number is never presented
-as a live one.
-
-## Mod (desktop app)
-
-The status line never runs in the desktop app. `mod/` is a Claude Code mod that
-draws the same figures as a band above the prompt, in the desktop Code tab and
-the terminal alike:
-
-```
-5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  ·  $3.20  ·  ● 3
-```
-
-Quota, context and cost come from the engine itself (`$.session.usage()` and
-`session.measure`), so they are the live official figures. The cache hit rate is
-summed from this session's main-thread turns. Today's tokens and the live session
-count come from `python ccquota.py --local`. `/ccquota` hides or shows the band.
-
-### Install (from GitHub)
-
-In a terminal `claude` session (the command is not available in the desktop Code tab):
-
-```
-/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
-```
-
-Answer `y` to add the marketplace, then choose the **user** scope. Installed at the
-user scope it also loads in the sessions the desktop app starts. On the settings
-screen, point `script` at your own `ccquota.py` (the default is the author's path)
-and `python` at your Python 3 command. You can change both later in `/config`.
-
-### Run it from your clone
-
-If you already have this repository cloned and want edits to take effect without
-reinstalling, name the `mod` folder in the `env` block of `~/.claude/settings.json`:
-
-```json
-"env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
-}
-```
-
-Every session started after that loads it, in the desktop app and the terminal alike
-(already-open conversations need a restart). For a single terminal session,
-`claude --plugin-dir /path/to/ccquota/mod` does the same. Use one way or the other,
-not both, or the band is drawn twice.
-
-## Codex
-
-ccquota also shows your Codex (OpenAI) 5-hour and weekly limits, in the mod band
-(`Codex 5h 34% 週 49%`), in the panel's details window, and as the opt-in `cx`
-status-line segment. `python ccquota.py --codex` prints them as JSON.
-
-The figures come live from Codex's own local app-server: ccquota starts
-`codex.exe app-server`, asks `account/rateLimits/read`, and closes it again, about
-one second, reused for 60 seconds. It uses the desktop app's bundled `codex.exe`
-(the newest `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`), or the one named
-in `CODEX_CLI_PATH`; the npm `codex.cmd` shim is not used. That request is an
-experimental Codex API, so when it fails ccquota falls back to the last figures
-in `~/.codex/sessions`, marked `~` as possibly stale, and drops any window that has
-already reset. Without Codex installed the Codex figures simply do not appear.
-
-The approach follows [codex-usage-companion](https://github.com/gkfriend/codex-usage-companion) (MIT); no code is taken from it.
-
-## Segments
+### Segments
 
 Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
 
@@ -198,11 +136,9 @@ Pick and order them with `CCQUOTA_SEGMENTS` (default: `ctx,5h,wk,today,agents`).
 | `model` | Model display name | Host payload |
 | `today` | Tokens since local midnight, across every project | Transcripts |
 | `agents` | Number of Claude Code processes running | `sessions/*.json` plus a liveness check |
-| `cx` | Codex 5-hour and weekly limits (not shown by default) | Codex app-server, else `~/.codex/sessions` |
+| `cx` | Codex 5-hour and weekly limits | Codex app-server, else `~/.codex/sessions` |
 
-Green below 70%, yellow from 70%, red from 90%.
-
-## Configuration
+### Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -210,243 +146,154 @@ Green below 70%, yellow from 70%, red from 90%.
 | `CCQUOTA_SEP` | two spaces | Separator between segments |
 | `CCQUOTA_CTX_LIMIT` | unset | Denominator for `ctx` when the host sends no context window |
 | `CCQUOTA_SESSION_MAX_AGE` | `86400` | Ignore session files older than this many seconds |
-| `CCQUOTA_COLOR` | — | Set to `0` to disable colour |
-| `NO_COLOR` | — | Also disables colour ([no-color.org](https://no-color.org)) |
-| `CCQUOTA_DEBUG` | — | Raise exceptions instead of degrading quietly |
+| `CCQUOTA_COLOR` | unset | Set to `0` to disable colour |
+| `NO_COLOR` | unset | Also disables colour ([no-color.org](https://no-color.org)) |
+| `CCQUOTA_DEBUG` | unset | Raise exceptions instead of degrading quietly |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Honoured if you have moved Claude Code's config |
+| `CODEX_CLI_PATH` | unset | Path to `codex.exe`, if it is not in the usual place |
 
-## How the numbers are worked out
-
-**The host payload is the authority.** Claude Code pipes a JSON object into the status line command on every run. It carries `rate_limits.five_hour` and `rate_limits.seven_day` with a live `used_percentage` and `resets_at`, a `context_window` with the real `context_window_size` and `used_percentage`, plus `prompt_cache`, `cost`, `model` and `workspace`. Anything available there is used directly — no estimation, no staleness. Everything below exists for hosts too old to send it.
-
-**First fallback: the cached figures on disk.** Claude Code stores the `/usage` response under `cachedUsageUtilization` in its global config. It refreshes rarely and on no schedule this project could pin down: one observed gap was eight days, another ran past forty hours of daily use across several app restarts and CLI sessions without moving. **Opening the `/usage` panel does not refresh it** - verified against a cache that stayed eight days stale while the panel showed current figures. A percentage only describes the window it was measured in, so it is used only while that window is still open. That makes it far more useful for the weekly limit, whose window is seven days long, than for the 5-hour one, where any cached figure is dead within five hours; treat it as a floor, since usage has grown since it was taken.
-
-**Second fallback: the transcripts.** Token counts derived locally, marked with `~` so an estimate never passes for a reported figure. The weekly reset rolls forward on its fixed 7-day cadence; the 5-hour window cannot, because it opens on your first message rather than on a clock grid — the reset times carry minutes and sub-seconds — so it is found by looking for the first message after a gap of five hours or more. Checked against a live panel, this derivation put the reset within two minutes of the official one.
-
-**The config file is chosen by content.** More than one file can be called `.claude.json`: Claude Code keeps a small bootstrap file in the config directory and the real one in `$HOME`, and which is which has changed between versions. Picking the first that exists lets the decoy win and the quota data vanish, so ccquota picks the one that actually carries the figures.
-
-**Responses are deduplicated**, for `today` and the transcript fallbacks. A single API response is often written as several lines that share a message id and repeat the same usage object; summing them overstates usage by more than 100% — measured at 136% over a week of real data and 149% over a day. Entries are keyed on message id plus request id, largest value wins, which also picks up the final figure when a streamed response grew while being written.
-
-**Cache reads are excluded** from those token counts. `cache_read_input_tokens` runs roughly 30x larger than everything else, because every turn re-reads the whole conversation.
-
-**Liveness is asked of the OS.** The heartbeat in `sessions/*.json` is far too sparse to detect a running process, and the files are not cleaned up when a session is killed, so ccquota checks whether the PID is alive. PIDs get reused, so session files older than a day are ignored.
-
-**Work is deferred until a segment needs it.** The transcript sweep and the 70 KB config parse only happen if a segment falls back to them, so a payload-only line costs about 60 ms instead of 100 ms.
-
-**The transcript cache is incremental.** Transcripts are append-only, so only bytes added since the last run are parsed. On a machine with 326 MB of recent transcripts that is the difference between 0.6 s and 0.04 s of sweep. The cache lives at `<config-dir>/ccquota/cache.json` and holds eight days; delete it any time to rebuild.
-
-## Limitations
-
-- `today` counts transcripts on this machine only. Cloud sessions and other devices are not included.
-- Anything marked `~` is a local estimate on a host that sent no figures. The official percentage is weighted by model, so local token counts do not convert to it at a fixed rate: one measurement on a pure-Opus 5-hour window put 56% at 933k tokens.
-- If a status line is configured but hooks are disabled, Claude Code skips it entirely. That is the host's behaviour, not a bug here.
-
-## Privacy
-
-Reads local files, writes its own cache files, and makes no network requests itself. For the Codex figures it starts your local `codex.exe app-server`, which asks OpenAI for your limits with Codex's own sign-in; ccquota never reads that sign-in and does not store your account id. It parses token counts and timestamps out of your transcripts; it never reads message content, and never touches your credentials.
-
-## License
-
-MIT
-
----
-
-# 繁體中文
-
-Claude Code 的本機用量儀表板。看 5 小時窗與週窗還剩多少、各自何時重置、今天燒了多少
-token，以及實際有幾個 Claude Code 在跑 —— 全部讀自 Claude Code 本來就寫在你機器上的
-檔案，不連網、不裝任何 pip 套件。
-
-同一套資料層，兩種呈現方式：
-
-**面板** —— 深藍像素冒險公會介面。週額度做成體力條、營火場景顯示執行中的 session
-數量，完整統計藏在一次點擊之後。
-
-**狀態列** —— 同樣的數字壓縮成 Claude Code 輸入框下方的一行：
-
-```
-ctx 5%  5h 87% 1h30m  wk 12% 6d9h  today 4.1M  ●7
-```
-
-額度數字是**真的官方數字**。Claude Code 每次呼叫狀態列時都會餵進一個即時的
-`rate_limits`，所以 `5h` 和 `wk` 跟 `/usage` 看到的一樣，不是估算。
-
-## 安裝
-
-需要 Python 3.7 以上。面板另外需要 tkinter（python.org 的安裝版與多數發行版都內建；
-Debian/Ubuntu 用 `apt install python3-tk`）。
-
-```bash
-git clone https://github.com/Nardohsu/ccquota-1.0.git
-```
-
-抓下來就是全部的安裝了 —— 不用編譯，也沒有要 pip install 的東西。
-
-## 執行
-
-### 面板
+## Panel
 
 ```bash
 python ccquota_panel.py
 ```
 
-Windows 上雙擊 `panel.bat` 可以不帶主控台視窗開啟。
+On Windows, double-click `panel.bat` to open it without a console window.
 
-### 狀態列
+The main window has four parts:
 
-在 `~/.claude/settings.json` 指過去，然後重開 Claude Code：
+- **Weekly stamina**: remaining official weekly quota, its reset time, and a segmented bar.
+- **Guild assets**: local tokens over the last seven days, excluding cache reads. A rolling
+  count, not a lifetime total or a currency.
+- **Today's harvest**: today's tokens and request count.
+- **Expedition**: a pixel camp scene and the number of Claude Code sessions running.
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "python C:\\path\\to\\ccquota\\ccquota.py",
-    "refreshInterval": 300
-  }
-}
-```
+Click the expedition area, press Ctrl+D, or choose **選項 → 用量明細** (Options → Usage
+details) to open the full statistics in a scrollable window: both limits, context and
+cache, model breakdown, attribution over the last 24 hours, running sessions, and Codex.
+Unknown official quota is shown as a dash; local estimates are never turned into an
+official percentage.
 
-Windows 路徑的反斜線在 JSON 裡要跳脫。想先看看長相而不接設定：
+The panel refreshes every 30 seconds in the background, so the window stays responsive;
+F5 refreshes at once, and errors come with a retry button. **選項 → 視窗保持置頂**
+toggles always-on-top. Ctrl+D and F5 only work while the panel window has focus.
 
-```bash
-python ccquota.py --test
-```
+Claude Code hands live quota figures only to the status line, so the panel reads a
+snapshot the status line leaves on each run. Keep a CLI session with the status line
+running and the panel stays current. Without a snapshot it falls back to the cached
+figures on disk and names the source at the bottom, so an old number is never shown as
+a live one.
 
-**桌面版在測試當下不執行狀態列指令**（它內建的是 2.1.247 版）。它會讀 `settings.json`
-（同一個檔案裡的 plugins 和 hooks 都正常生效），但 `statusLine` 這個 key 被忽略 ——
-實測在 trust 已接受、hooks 已啟用的情況下乾淨重開，指令從未被呼叫，而同一份設定在
-CLI 立刻就生效。桌面版自帶一份跟你 PATH 上不同的 Claude Code，所以先確認自己的版本再
-假設這個結論仍然成立。那行沒出現就改用 CLI。
+### Scenes
 
-`refreshInterval`（單位秒，最小 1）讓狀態列另外按計時器重跑。它是**疊加**、不是取代事件
-觸發 —— 送出訊息一樣立刻更新，計時器只負責閒置的空檔。不設的話，你開著視窗卻在別處工作
-時數字會凍住。單次約 60~100 毫秒，設 300 秒完全不值一提，設 10 秒約吃掉 1% 的一個核心；
-低於 5 秒是浪費，額度不會變那麼快。
-
-### 確認能動
-
-```bash
-python -m unittest discover -p "test_*.py"
-```
-
-## 面板細節
-
-主畫面四個區塊：
-
-- **每週行動力**：官方週額度的剩餘百分比、重置時間與分段體力條。
-- **公會總資產**：本機近 7 日 token（不含快取讀取），不是歷史累計或貨幣。
-- **今日採集**：今日 token 與請求數。
-- **遠征隊伍**：像素村莊營火場景與執行中的 Claude Code session 數量。
-
-點擊隊伍區、按 Ctrl+D，或選擇「選項 → 用量明細」，可查看原本的全部統計：
-5 小時／每週限制、Context、快取、模型拆分、近 24 小時用量歸屬及工作階段。
-明細視窗支援捲動。沒有官方額度時顯示「—」，不把本機 token 估算換成百分比。
-
-每 30 秒自動刷新，右上角也有手動更新鈕，也可按 F5。資料在背景讀取，不會阻塞操作；
-失敗時顯示錯誤與重試按鈕。從「選項 → 視窗保持置頂」切換置頂。
-
-### 場景隨機切換
-
-- 啟動時從 `assets` 隨機選圖；每天依電腦本機時間 **09:00、18:00** 自動換圖。
-- 從「選項 → 隨機切換場景」可立即預覽切換效果。
-- 每次約 **2 秒**：舊圖漸暗淡出，新圖再漸亮淡入，文字與按鈕不受影響。
-- 有其他有效圖片時，不連續重複目前圖片。全部圖片共用同一個隨機候選池。
-- 將 PNG、GIF（第一幀）、PPM 或 PGM 直接放在 `assets`，下次切換就會重新掃描。
-  損壞的圖片會略過；只有一張時維持原圖，沒有圖片時仍可查看用量。
-- 自動換景需要面板保持開啟。休眠錯過時間點時，喚醒後補切一次，不連續重播；
-  午夜不換景。排程每秒檢查一次，因此通常會在整點後一秒內開始轉場。
-
-場景功能位於 `ccquota_scene.py`，使用 Tkinter 與 Python 標準函式庫，
-不新增執行期相依套件、不連網、不修改原始圖片。
-
-只有狀態列會拿到 Claude Code 餵的即時數字，所以彈窗讀的是狀態列每次執行時留下
-的快照。保持一個裝了 ccquota 的 CLI session 開著，彈窗的數字就一直是新的；沒有
-快照時會退回磁碟上的快取數字，並在底部標明來源 —— 過期的數字不會被當成即時的呈現。
-
-## Mod（桌面版）
-
-桌面版不會執行狀態列。`mod/` 是一個 Claude Code mod，把同樣的數字畫成輸入框上方
-的一條橫條，桌面版 Code 分頁和終端都能用：
-
-```
-5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  ·  $3.20  ·  ● 3
-```
-
-額度、context、花費直接取自引擎（`$.session.usage()` 與 `session.measure`），是即時
-的官方數字。快取命中率由本 session 主對話每一輪的用量累加。今日 token 與執行中
-session 數來自 `python ccquota.py --local`。輸入 `/ccquota` 可隱藏或顯示橫條。
-
-### 安裝（從 GitHub）
-
-在終端機的 `claude` 裡輸入（桌面版 Code 分頁沒有這個指令）：
-
-```
-/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
-```
-
-詢問是否加入 marketplace 時回答 `y`，範圍選 **user**。裝在 user 範圍，桌面版開的
-session 也會載入。設定畫面中把 `script` 改成你自己的 `ccquota.py` 路徑（預設值是作者
-的路徑），`python` 改成你的 Python 3 指令；之後也能在 `/config` 修改。
-
-### 從自己的 clone 執行
-
-已經 clone 這個 repo、希望改了檔案不必重裝就生效，就在 `~/.claude/settings.json`
-的 `env` 區塊指向 `mod` 資料夾：
-
-```json
-"env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
-}
-```
-
-之後新開的每個 session 都會載入，桌面版與終端機皆同（已開的對話要重開）。只想在單一
-終端機 session 用，可改用 `claude --plugin-dir /path/to/ccquota/mod`。兩種方式擇一，
-同時使用橫條會畫兩次。
+- At startup, and every day at **09:00 and 18:00** local time, a scene is picked at random
+  from `assets`. **選項 → 隨機切換場景** switches by hand.
+- Each change fades the old scene out and the new one in over about two seconds; text
+  and buttons stay put. The same image is not picked twice in a row when there is another.
+- Add PNG, GIF (first frame), PPM or PGM files to `assets`; the folder is rescanned on
+  every switch. Unreadable images are skipped. With one image it stays; with none the
+  dashboard still works.
+- Changes only happen while the panel is open. After sleep it catches up once if it
+  missed 09:00 or 18:00, rather than replaying every change. Midnight changes nothing.
 
 ## Codex
 
-ccquota 也會顯示 Codex（OpenAI）的 5 小時與每週額度：mod 橫條（`Codex 5h 34% 週 49%`）、
-面板的用量明細，以及需要自行開啟的狀態列區段 `cx`。`python ccquota.py --codex` 會以 JSON 輸出。
+ccquota also shows your Codex (OpenAI) 5-hour and weekly limits: in the mod band, in the
+panel's usage details, and as the `cx` status line segment. `python ccquota.py --codex`
+prints them as JSON.
 
-數字直接取自 Codex 本機的 app-server：ccquota 啟動 `codex.exe app-server`，送出
-`account/rateLimits/read` 後關閉，約一秒，結果沿用 60 秒。使用桌面版內附的 `codex.exe`
-（`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe` 中最新的一個），或 `CODEX_CLI_PATH`
-指定的路徑；不使用 npm 的 `codex.cmd`。這是 Codex 的實驗性 API，失敗時改讀
-`~/.codex/sessions` 裡最後一筆，標上 `~` 表示可能過時，已經重置的窗口直接不顯示。
-沒裝 Codex 時不會出現 Codex 的數字。
+The figures come live from Codex's own local app-server. ccquota starts
+`codex.exe app-server`, asks `account/rateLimits/read`, and closes it again. That takes
+about a second, and the result is reused for 60 seconds. It uses the desktop app's
+bundled `codex.exe` (the newest `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`) or the
+one named in `CODEX_CLI_PATH`; the npm `codex.cmd` shim is not used.
 
-做法參考 [codex-usage-companion](https://github.com/gkfriend/codex-usage-companion)（MIT），沒有使用它的程式碼。
+This is an experimental Codex API. When it fails, ccquota falls back to the last figures
+in `~/.codex/sessions`, marked `~` as possibly stale, and leaves out any window that has
+already reset. Those logs only change while Codex runs, so they can be days old. Without
+Codex installed, nothing about Codex appears.
 
-## 數字是怎麼算出來的
+The approach follows [codex-usage-companion](https://github.com/gkfriend/codex-usage-companion) (MIT); no code is taken from it.
 
-**stdin payload 是權威來源。** Claude Code 每次執行狀態列都會用管線餵進一包 JSON，裡面有 `rate_limits.five_hour` 和 `rate_limits.seven_day`（含即時的 `used_percentage` 與 `resets_at`）、`context_window`（含真實的 `context_window_size`）、還有 `prompt_cache`、`cost`、`model`、`workspace`。凡是那裡有的就直接用 —— 不估算、不會過期。以下所有機制都只是給太舊、不送這包資料的版本用的。
+## Checking it works
 
-**第一層退路：磁碟上的快取數字。** Claude Code 把 `/usage` 的回應存在全域設定的 `cachedUsageUtilization`。它很少刷新，而且本專案找不出固定規律：觀察到的一次間隔是 8 天，另一次則是超過 40 小時的日常使用、期間重開過數次桌面版也跑過 CLI，仍然沒有更新。**開 `/usage` 面板並不會刷新它** —— 實測面板顯示當下數字時快取仍停在 8 天前。百分比只描述它被量測的那個窗，因此只在該窗還沒結束時採用。這讓它對**週限制**遠比對 5 小時窗有用（週窗長達 7 天，5 小時窗的任何快取數字 5 小時內必定作廢）；並且要當成**下限**看，因為量測之後用量只會增加。
+```bash
+python -m unittest discover -p "test_*.py"
+claude plugin validate mod
+claude plugin test mod
+```
 
-**第二層退路：transcript。** 從本機推算 token，標上 `~`，讓估算值絕不會被誤認成官方數字。週重置可以按固定 7 天週期往前推；5 小時窗不行，因為它從你的第一則訊息開始算、不對齊時鐘格（重置時間帶著分鐘和小數秒），所以改成找「間隔 5 小時以上之後的第一則訊息」。跟即時面板對照過，這個推導算出的重置時間跟官方只差 2 分鐘。
+## How the numbers are worked out
 
-**設定檔依內容挑選。** 叫做 `.claude.json` 的檔案不只一個：Claude Code 在設定目錄放一個小的開機檔，真正的那份在 `$HOME`，而且版本之間換過位置。挑「第一個存在的」會讓假檔勝出、額度資料整個消失，所以挑真的帶著數字的那一份。
+**The host is the authority.** Claude Code pipes a JSON object into the status line
+command on every run, and the mod reads the same figures from the engine. They carry the
+5-hour and weekly `used_percentage` and `resets_at`, the real context window size, prompt
+cache, cost, model and workspace. Anything available there is used directly: no
+estimation, no staleness. Everything below is a fallback for when it is not.
 
-**回應要去重**（用於 `today` 與上述退路）。一次 API 回應常被寫成多行，共用同一個 message id、每行重複同一份 usage；直接加總會高估 100% 以上 —— 實測一週高估 136%、單日 149%。以 message id 加 request id 為 key、取最大值，串流過程中長大的數字也才會取到最終值。
+**First fallback: the cached figures on disk.** Claude Code stores the `/usage` response
+under `cachedUsageUtilization` in its global config. It refreshes rarely and on no
+schedule this project could pin down: one observed gap was eight days, another ran past
+forty hours of daily use across several restarts without moving. **Opening `/usage` does
+not refresh it.** A percentage only describes the window it was measured in, so it is
+used only while that window is still open. That makes it useful for the weekly limit and
+nearly useless for the 5-hour one. Treat it as a floor, since usage has only grown since.
 
-**不計 cache 讀取。** `cache_read_input_tokens` 大約是其他項目的 30 倍，因為每一輪都重讀整段對話。
+**Second fallback: the transcripts.** Token counts derived locally, marked `~` so an
+estimate never passes for an official figure. The weekly reset rolls forward on its
+fixed 7-day cadence. The 5-hour window cannot, because it opens on your first message
+rather than on a clock grid, so it is found by looking for the first message after a gap
+of five hours or more. Checked against a live panel, this put the reset within two
+minutes of the official one.
 
-**存活狀態問作業系統。** `sessions/*.json` 裡的心跳太稀疏，判斷不了進程還在不在，而且 session 被強制關掉時檔案不會清掉，所以直接檢查 PID 是否存活；PID 會被重用，超過一天的 session 檔一律忽略。
+**The config file is chosen by content.** More than one file can be called
+`.claude.json`: a small bootstrap file in the config directory and the real one in
+`$HOME`, and which is where has changed between versions. Taking the first that exists
+lets the decoy win, so ccquota takes the one that actually carries the figures.
 
-**用不到就不做。** transcript 掃描與 70 KB 設定檔解析都只在真的有 segment 退到那一層時才執行，所以純 payload 的狀態列約 60 毫秒，而非 100 毫秒。
+**Responses are deduplicated.** One API response is often written as several lines that
+share a message id and repeat the same usage; summing them overstates usage by more
+than 100% (measured at 136% over a week and 149% over a day). Entries are keyed on
+message id plus request id and the largest value wins, which also catches the final
+figure of a streamed response.
 
-**transcript 快取是增量的。** transcript 是 append-only，只解析上次之後新增的位元組。在近期 transcript 有 326 MB 的機器上，這是掃描 0.6 秒與 0.04 秒的差別。快取在 `<設定目錄>/ccquota/cache.json`，保留 8 天，隨時刪掉都能重建。
+**Cache reads are excluded** from token counts. `cache_read_input_tokens` runs about 30
+times larger than everything else, because every turn re-reads the whole conversation.
 
-## 限制
+**Liveness is asked of the OS.** The heartbeat in `sessions/*.json` is too sparse to tell
+whether a process is running, and the files stay behind when a session is killed, so
+ccquota checks whether the PID is alive. PIDs get reused, so session files older than a
+day are ignored.
 
-- `today` 只統計這台機器上的 transcript，雲端 session 與其他裝置不算在內。
-- 標著 `~` 的是宿主沒送數字時的本機估算。官方百分比會依模型加權，所以本機 token 數無法用固定比例換算：實測一個純 Opus 的 5 小時窗，56% 對應 933k token。
-- 設了狀態列但關掉 hooks 的話，Claude Code 會整個跳過狀態列。那是宿主行為，不是這支程式的問題。
+**Work is deferred until needed.** The transcript sweep and the 70 KB config parse only
+run when a segment falls back to them, so a status line served from the host payload
+takes about 60 ms instead of 100 ms.
 
-## 隱私
+**The transcript cache is incremental.** Transcripts are append-only, so only bytes added
+since the last run are parsed: on a machine with 326 MB of recent transcripts, 0.04 s
+instead of 0.6 s. The cache lives in `<config-dir>/ccquota/` and holds eight days;
+delete it any time to rebuild.
 
-只讀本機檔案、只寫自己的快取檔，本身不連網。Codex 的數字是啟動本機的 `codex.exe app-server`，由它用 Codex 自己的登入向 OpenAI 查詢；ccquota 不讀那份登入資料，也不儲存帳號 ID。它從 transcript 解析 token 數與時間戳，不讀訊息內容，也不碰任何憑證。
+## Limitations
 
-## 授權
+- `today` counts transcripts on this machine only. Cloud sessions and other devices are
+  not included.
+- Anything marked `~` is an estimate. The official percentage is weighted by model, so
+  local token counts do not convert to it at a fixed rate: one pure-Opus 5-hour window
+  read 56% at 933k tokens.
+- If a status line is configured but hooks are disabled, Claude Code skips the status
+  line entirely. That is the host's behaviour.
+- The Codex figures rely on an experimental Codex API and may need updating when Codex
+  changes it.
+
+## Privacy
+
+ccquota reads local files, writes its own cache files, and makes no network requests
+itself. It parses token counts and timestamps out of your transcripts and never reads
+message content or your credentials. For the Codex figures it starts your local
+`codex.exe app-server`, which asks OpenAI for your limits using Codex's own sign-in;
+ccquota never reads that sign-in and does not store your account id.
+
+## License
 
 MIT
