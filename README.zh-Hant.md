@@ -37,7 +37,7 @@ git clone https://github.com/Nardohsu/ccquota.git
 
 ## Mod
 
-`mod/` 是一個 Claude Code mod，在輸入框上方畫一條橫條，桌面版 Code 分頁和終端機都能用。
+這個 repo 同時也是一個 Claude Code mod，在輸入框上方畫一條橫條，桌面版 Code 分頁和終端機都能用。
 輸入 `/ccquota` 可以隱藏或顯示橫條。
 
 ### 從 GitHub 安裝
@@ -48,23 +48,24 @@ git clone https://github.com/Nardohsu/ccquota.git
 /plugin install ccquota --marketplace Nardohsu/ccquota
 ```
 
-詢問是否加入 marketplace 時回答 `y`，範圍選 **user**，這樣桌面版開的對話也會載入。設定畫面
-中，把 `script` 改成你自己的 `ccquota.py` 路徑（預設值是作者的路徑），`python` 改成你的
-Python 3 指令，之後也可以在 `/config` 修改。有新版時執行 `claude plugin update`。
+詢問是否加入 marketplace 時回答 `y`，範圍選 **user**，這樣桌面版開的對話也會載入。安裝內容
+已經包含 `ccquota.py`，設定畫面可以直接略過。只有當你的 Python 3 指令不叫 `python`（例如
+`python3`）時，才需要改 `python` 這一欄，之後也可以在 `/config` 修改。有新版時執行
+`claude plugin update`。
 
 ### 或從自己的 clone 執行
 
-想讓自己改的檔案不必重裝就生效，在 `~/.claude/settings.json` 的 `env` 區塊指向 `mod`
+想讓自己改的檔案不必重裝就生效，在 `~/.claude/settings.json` 的 `env` 區塊指向 repo
 資料夾：
 
 ```json
 "env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota"
 }
 ```
 
 之後新開的每個對話都會載入，桌面版和終端機都一樣。已經開著的對話要重開才會載入。只想在
-單一終端機對話使用，可以改用 `claude --plugin-dir /path/to/ccquota/mod`。這兩種和
+單一終端機對話使用，可以改用 `claude --plugin-dir /path/to/ccquota`。這兩種和
 marketplace 安裝只能擇一，同時使用橫條會畫兩次。
 
 ### 橫條上的每一段
@@ -201,8 +202,8 @@ ccquota 也會顯示 Codex（OpenAI）的 5 小時與每週額度，出現在 mo
 
 ```bash
 python -m unittest discover -p "test_*.py"
-claude plugin validate mod
-claude plugin test mod
+claude plugin validate .
+claude plugin test .
 ```
 
 ## 數字是怎麼算出來的

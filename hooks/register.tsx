@@ -61,11 +61,20 @@ function toQuota(u: {
 
 let isFetching = false
 
+// ccquota.py ships in the plugin's own folder, so an empty setting means that
+// copy: a marketplace install and a clone both work without editing anything.
+function scriptPath($: EngineInterface, configured: string): string {
+  if (configured.trim()) return configured.trim()
+  const root = $.plugin.root.replace(/[\\/]+$/, '').replace(/[\\/]\.claude-plugin$/, '')
+  return `${root}/ccquota.py`
+}
+
 // The sweep is ~0.1 s but a hook should never wait on it: run it, and let the
 // atom write redraw the band when it lands.
-async function refreshLocal($: EngineInterface, python: string, script: string) {
+async function refreshLocal($: EngineInterface, python: string, configured: string) {
   if (isFetching) return
   isFetching = true
+  const script = scriptPath($, configured)
   try {
     const r = await $.process.run([python, script, '--local'], { timeoutMs: 20_000 })
     if (r.exitCode !== 0) {
@@ -89,7 +98,7 @@ async function refreshLocal($: EngineInterface, python: string, script: string) 
 }
 
 export const register: Register = (on, options) => {
-  const script = String(options?.script ?? 'F:/Projects/ccquota/ccquota.py')
+  const script = String(options?.script ?? '')
   const python = String(options?.python ?? 'python')
   on('session.start', async ($, e, next) => {
     const started = await next(e)

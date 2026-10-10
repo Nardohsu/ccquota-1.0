@@ -1,6 +1,6 @@
 {
   "name": "ccquota",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "5-hour and weekly quota, context, cost, today's tokens and live sessions in a band above the prompt",
   "author": {
     "name": "Nardohsu"
@@ -10,8 +10,8 @@
     "script": {
       "type": "string",
       "title": "ccquota.py path",
-      "description": "Path to ccquota.py, used for today's tokens and the live session count",
-      "default": "F:/Projects/ccquota/ccquota.py"
+      "description": "Path to ccquota.py, used for today's tokens, the live session count and Codex. Leave empty to use the copy installed with this plugin",
+      "default": ""
     },
     "python": {
       "type": "string",

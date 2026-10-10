@@ -39,7 +39,7 @@ That is the whole installation. Then set up whichever of the three you want.
 
 ## Mod
 
-A Claude Code mod in `mod/` that draws a band above the prompt, in the desktop Code tab
+This repository is also a Claude Code mod that draws a band above the prompt, in the desktop Code tab
 and in the terminal alike. Type `/ccquota` to hide or show it.
 
 ### Install from GitHub
@@ -51,25 +51,25 @@ In a terminal `claude` session (this command is not available in the desktop Cod
 ```
 
 Answer `y` to add the marketplace, then choose the **user** scope; at that scope it also
-loads in the sessions the desktop app starts. On the settings screen, point `script` at
-your own `ccquota.py` (the default is the author's path) and `python` at your Python 3
-command. Both can be changed later in `/config`. Run `claude plugin update` to pick up
-new versions.
+loads in the sessions the desktop app starts. The install includes `ccquota.py`, so the
+settings screen can be left as it is. Change `python` there (or later in `/config`) if
+Python 3 is not on your PATH as `python`, for example `python3`. Run
+`claude plugin update` to pick up new versions.
 
 ### Or run it from your clone
 
-To have your own edits take effect without reinstalling, name the `mod` folder in the
-`env` block of `~/.claude/settings.json`:
+To have your own edits take effect without reinstalling, name the repository folder in
+the `env` block of `~/.claude/settings.json`:
 
 ```json
 "env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota"
 }
 ```
 
 Every session started after that loads it, in the desktop app and the terminal alike.
 Conversations that were already open load it once they are restarted. For a single
-terminal session, `claude --plugin-dir /path/to/ccquota/mod` does the same. Use one
+terminal session, `claude --plugin-dir /path/to/ccquota` does the same. Use one
 of these or the marketplace install, not both, or the band is drawn twice.
 
 ### What the band shows
@@ -219,8 +219,8 @@ The approach follows [codex-usage-companion](https://github.com/gkfriend/codex-u
 
 ```bash
 python -m unittest discover -p "test_*.py"
-claude plugin validate mod
-claude plugin test mod
+claude plugin validate .
+claude plugin test .
 ```
 
 ## How the numbers are worked out

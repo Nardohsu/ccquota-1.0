@@ -29,8 +29,11 @@ const LOCAL = JSON.stringify({
 
 // Nothing stands beneath the plugin in a test, so the test answers for the
 // engine: ccquota.py through process.run, and the session's own events.
-function fakePython(on: any, stdout = LOCAL) {
-  on('process.run', () => ({ value: { exitCode: 0, stdout, stderr: '' } }))
+function fakePython(on: any, stdout = LOCAL, runs: string[][] = []) {
+  on('process.run', (_$: any, e: any) => {
+    runs.push([...e.argv])
+    return { value: { exitCode: 0, stdout, stderr: '' } }
+  })
   on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
   on('session.measure', (_$: any, e: any) => ({ changed: e.changed }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: [] } }))
@@ -143,3 +146,17 @@ for (const state of ['present', 'stale', 'null'] as const) {
     }
   })
 }
+
+test('with no script set, it runs the ccquota.py beside the plugin', async ($: any, on) => {
+  const runs: string[][] = []
+  fakePython(on, LOCAL, runs)
+  await $.session.start({ source: 'startup', cwd: 'F:/Projects/ccquota' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't' })
+
+  expect(runs.length).toBeGreaterThan(0)
+  const [python, script, flag] = runs[0]
+  expect(python).toBe('python')
+  expect(flag).toBe('--local')
+  expect(script.endsWith('/ccquota.py')).toBe(true)
+  expect(script.includes('.claude-plugin')).toBe(false)
+})

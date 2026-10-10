@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "ccquota",
-      "source": "./mod",
+      "source": "./",
       "description": "5-hour and weekly quota, context, cost, today's tokens and live sessions in a band above the prompt"
     }
   ]
