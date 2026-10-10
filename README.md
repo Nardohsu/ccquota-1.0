@@ -32,7 +32,7 @@ Requires Python 3.7+. The panel also needs tkinter, which ships with the python.
 installers and most distributions (`apt install python3-tk` on Debian and Ubuntu).
 
 ```bash
-git clone https://github.com/Nardohsu/ccquota-1.0.git
+git clone https://github.com/Nardohsu/ccquota.git
 ```
 
 That is the whole installation. Then set up whichever of the three you want.
@@ -47,7 +47,7 @@ and in the terminal alike. Type `/ccquota` to hide or show it.
 In a terminal `claude` session (this command is not available in the desktop Code tab):
 
 ```
-/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
+/plugin install ccquota --marketplace Nardohsu/ccquota
 ```
 
 Answer `y` to add the marketplace, then choose the **user** scope; at that scope it also
@@ -63,13 +63,13 @@ To have your own edits take effect without reinstalling, name the `mod` folder i
 
 ```json
 "env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota-1.0/mod"
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
 }
 ```
 
 Every session started after that loads it, in the desktop app and the terminal alike.
 Conversations that were already open load it once they are restarted. For a single
-terminal session, `claude --plugin-dir /path/to/ccquota-1.0/mod` does the same. Use one
+terminal session, `claude --plugin-dir /path/to/ccquota/mod` does the same. Use one
 of these or the marketplace install, not both, or the band is drawn twice.
 
 ### What the band shows
@@ -95,14 +95,14 @@ Point Claude Code at it in `~/.claude/settings.json`, then restart Claude Code:
 {
   "statusLine": {
     "type": "command",
-    "command": "python /path/to/ccquota-1.0/ccquota.py",
+    "command": "python /path/to/ccquota/ccquota.py",
     "refreshInterval": 300
   }
 }
 ```
 
 On Windows, backslashes need escaping in JSON:
-`"python C:\\Users\\you\\ccquota-1.0\\ccquota.py"`.
+`"python C:\\Users\\you\\ccquota\\ccquota.py"`.
 
 To see the line without wiring anything up:
 

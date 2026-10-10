@@ -30,7 +30,7 @@ Mod     5h 87% 2h40m  ·  週 31%  ·  ctx 12%  ·  cache 96%  ·  今日 2.9M  
 （Debian、Ubuntu 用 `apt install python3-tk`）。
 
 ```bash
-git clone https://github.com/Nardohsu/ccquota-1.0.git
+git clone https://github.com/Nardohsu/ccquota.git
 ```
 
 這樣就裝好了。接著依需要設定下面三種之一。
@@ -45,7 +45,7 @@ git clone https://github.com/Nardohsu/ccquota-1.0.git
 在終端機的 `claude` 裡輸入（桌面版 Code 分頁沒有這個指令）：
 
 ```
-/plugin install ccquota --marketplace Nardohsu/ccquota-1.0
+/plugin install ccquota --marketplace Nardohsu/ccquota
 ```
 
 詢問是否加入 marketplace 時回答 `y`，範圍選 **user**，這樣桌面版開的對話也會載入。設定畫面
@@ -59,12 +59,12 @@ Python 3 指令，之後也可以在 `/config` 修改。有新版時執行 `clau
 
 ```json
 "env": {
-  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota-1.0/mod"
+  "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/ccquota/mod"
 }
 ```
 
 之後新開的每個對話都會載入，桌面版和終端機都一樣。已經開著的對話要重開才會載入。只想在
-單一終端機對話使用，可以改用 `claude --plugin-dir /path/to/ccquota-1.0/mod`。這兩種和
+單一終端機對話使用，可以改用 `claude --plugin-dir /path/to/ccquota/mod`。這兩種和
 marketplace 安裝只能擇一，同時使用橫條會畫兩次。
 
 ### 橫條上的每一段
@@ -90,14 +90,14 @@ marketplace 安裝只能擇一，同時使用橫條會畫兩次。
 {
   "statusLine": {
     "type": "command",
-    "command": "python /path/to/ccquota-1.0/ccquota.py",
+    "command": "python /path/to/ccquota/ccquota.py",
     "refreshInterval": 300
   }
 }
 ```
 
 Windows 路徑的反斜線在 JSON 裡要寫兩次：
-`"python C:\\Users\\you\\ccquota-1.0\\ccquota.py"`。
+`"python C:\\Users\\you\\ccquota\\ccquota.py"`。
 
 不接設定，只想先看看長相：
 
